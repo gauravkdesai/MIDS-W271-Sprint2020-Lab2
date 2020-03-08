@@ -54,71 +54,100 @@ title(main = "Monthly Mean CO2 Variation")
 Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This should include thorough analyses of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed.
 
 **Answer**
+Lets look at the data
 ```{r}
 head(co2)
 tail(co2)
 str(co2)
 summary(co2)
-hist(co2)
+hist(co2$value)
+```
 
+There are no missing values. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels. So lets look at it from time dimension.
+
+```{r}
 co2.ts <- as_tsibble(co2)
-summary(co2.ts)
+#summary(co2.ts)
+autoplot(co2.ts,.vars = value)
+```
+We observe two things
+1. There is upward trend year on year in CO2 emissions
+2. There is a seasonal fluctuation within a year
 
-#plot(co2.ts, type="l")
-autoplot(co2.ts)
-co2.components <- stats::decompose(co2) 
-co2.components$random %>% autoplot()
-co2.components$random[c(11:16)]  %>% gg_tsdisplay(plot_type = "partial")
-acf(co2.components$random, na.action = na.omit)
-pacf(co2.components$random, na.action = na.omit) # residuals still have lot of autocorrelations
-pacf(co2.ts) # indicates seasonal component
-pacf(co2.ts) # indicates AR(1) component
+Lets try to decompose and see the individual components in more detail
+
+```{r}
 co2.ts %>% model(STL(value)) %>% components() %>% autoplot()
-co2.ts %>% gg_tsdisplay(plot_type = "partial")
-co2.ts %>% ggplot(aes(x = value)) + geom_histogram()
+```
+When we decompose using STL model, we can see the upward trend separated from yearly seasonal cycles.
+We note that seasonal cycle ups and downs are growing with time, so we may need to stabilize the seasons for better predictions.
 
+
+```{r}
+co2.ts %>% gg_tsdisplay(plot_type = "partial")
+```
+
+The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again at multples of 12.
+This indicates that the model could be AR model with 12 months seasonal cycles.
+
+No lets look at each component one by one starting with trend
+
+```{r}
+co2.ts.components <- co2.ts %>% model(STL(value)) %>% components() 
+ggplot(data=co2.ts.components)+
+  geom_line(aes(x=index, y=trend)) +
+  ggtitle("Trend")
+```
+There are minor bumps and dips but there is no major shocks or sudden movements in trend.
+
+Now lets look at seasons
+
+```{r}
 co2.ts %>%
   gg_season(y=value, period = "year")+
   ylab("CO2 emission")+
     ggtitle("Seasonal plot : Monthly CO2 emission")
-# higher CO2 emissions in April to June and dip in September-October probably due to differnce in northan hemisphere and southern hemisphere attributes (like population, vegotation etc.)
-# also year on year the patter is increasing
+```
+We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern himisphere vs southern hemisphere. Population, vegitation and other attributes of these two halfs of earth are quite different which could potentially cause this seasonal effect.
 
+Now lets look at same data from another angel.
+```{r}
 co2.ts %>%
   gg_subseries(y=value, period = "year")+
+  geom_hline(aes(yintercept=mean(co2.ts$value), colour="red"))+
   ylab("CO2 emission")+
   xlab("Years")+
   ggtitle("Seasonal subseries plot : Monthly CO2 emission")
-#Same observations as above
+```
+It is more or less same observation that northern summer increases CO2 emission and southern summer decreases CO2 eission within a year. But we can cearly see that CO2 emission is on the rise year on year.
 
-co2.ts %>%
-  gg_lag(y=value, period = "year")
+Since we saw earlier that seasonal patterns are are increasin in variance, we can try to transform them so the seasonal changes are uniform across time series. This is desirable property for finding good model fit.
 
-co2.ts %>% 
-  ACF(y=value, lag_max = 48) %>%
-  autoplot() #positive autocorrelations for large number of lags indicate seasonality. 
-# The seasonality autocorelation is at highest 12 months apart and drop s at around 6 months interval.
-
+```{r}
 lambda <- co2.ts %>%
   features(value, features=guerrero) %>%
   pull(lambda_guerrero)
-co2.ts %>% autoplot(box_cox(value, lambda))
-co2.ts.comp <- co2.ts %>% model(STL(box_cox(value, lambda))) 
+co2.ts.trans.comp <- co2.ts %>% model(STL(box_cox(value, lambda))) 
 
-co2.ts.comp %>% components() %>% autoplot()
+co2.ts.trans.comp %>% components() %>% autoplot() +
+  ggtitle(paste("Box-Cox Tranformed Decompositions for lambda=",round(lambda,3)))
+```
+After transformation we can see the seasonal pattern remains in same bounds.
 
-co2.ts.comp %>% components() %>%
-  gg_subseries(y=season_year)
+
+Now lets look at residuals
+
+```{r}
 
 # Lets look ate residuals
 
-co2.ts.comp  %>% components() %>% select("remainder") %>%
+co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
   ggplot(aes(x=remainder)) +geom_histogram()
 
-co2.ts.comp  %>% components() %>% select("remainder") %>%
+co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
   autoplot()
   
-co2.ts.comp  %>% components() %>% select("remainder") %>%
+co2.ts.trans.comp %>% components() %>% select("remainder") %>%
   gg_tsdisplay()
 ```
 
