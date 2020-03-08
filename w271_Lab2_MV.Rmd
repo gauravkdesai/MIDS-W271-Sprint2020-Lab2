@@ -103,7 +103,11 @@ ggseasonplot(co2, year.labels=TRUE, year.labels.left=TRUE) +
   ylab("co2") +
   ggtitle("Seasonal plot: co2 levels")
 
+co2 %>% diff() %>% ggtsdisplay(main="")
 
+co2 %>% diff(differences = 2) %>% ggtsdisplay(main="")
+
+co2 %>% diff(differences = 3) %>% ggtsdisplay(main="")
 
 
 
@@ -112,7 +116,7 @@ The co2 dataset is comprised of 468 observations of data from 1959 to 1998 where
 
 In the decompose plots, we see that the trend appears to be additive, and there is a clear and consistent season trend. Additionally, the variance in the random series seems to be consistent over the time series. 
 
-The seasonality in the data shows that every October, co2 levels are lowest, and in May, co2 levels are highest. The seasonal trend every year precisely follows the same pattern. 
+The seasonality in the data shows that every October, co2 levels are lowest, and in May, co2 levels are highest. The seasonal trend every year precisely follows the same pattern. The time series is not stationary, and when we take the difference, we stil see autocorrelation in the differenced series. 
 **Part 2 (3 points)**
 
 Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals. Compare this to a quadratic time trend model. Discuss whether a logarithmic transformation of the data would be appropriate. Fit a suitable polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020. 
@@ -242,26 +246,7 @@ fc_beer %>%
   xlab("Year") + ylab("megalitres")
 
 
-predict.data = data.frame(x = seq(459, 510, 1), x2 = seq(459, 510, 1)^2)
 
-quad.predict = quad.trend.fit2$coefficients[1] + quad.trend.fit2$coefficients[2]*predict.data$x 
-
-quadratic.predict = quadratic.trend.fit$coefficients[1] + quadratic.trend.fit$coefficients[2]*predict.data$x + 
-quadratic.trend.fit$coefficients[3]*predict.data$x2
-
-exp.predict = exp(exp.trend.fit$coefficients[1] + exp.trend.fit$coefficients[2]*predict.data$x)
-
-dump = data.frame(predict.data[1], 
-                  linear.predict, quadratic.predict, exp.predict)
-
-ggplot(data = dump, aes(x=seq(52), y=value, colour=variable)) +
-  ylab('Values') +
-  geom_line(aes(y=linear.predict, col = "linear forecast")) +
-  geom_line(aes(y=quadratic.predict, col = "quadratic forecast")) +
-  geom_line(aes(y=exp.predict, col = "exponential forecast")) +
-  ggtitle("Initial Unemployment Claims") +
-  theme(title = element_text(size = rel(1.25)),
-        legend.position = "bottom")
 
 ```
 
@@ -269,6 +254,46 @@ ggplot(data = dump, aes(x=seq(52), y=value, colour=variable)) +
 **Part 3 (3 points)**
 
 Following all appropriate steps, choose an ARIMA model to fit to the series. Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. Write your model (or models) using backshift notation. Use your model (or models) to generate forecasts to the year 2020. 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+get.best.arima <- function(x.ts, maxord = c(1,1,1,1,1,1))
+{
+  best.aic <-1000000
+  n <- length(x.ts)
+  for (p in 0:maxord[1]) for(d in 0:maxord[2]) for(q in 0:maxord[3])
+      for (P in 0:maxord[4]) for(D in 0:maxord[5]) for(Q in 0:maxord[6])
+      {
+        fit <- Arima(x.ts, order = c(p,d,q),
+                     seas = list(order = c(P,D,Q),
+                                 frequency(x.ts)), method = "CSS")
+        fit.aic <- -2*fit$loglik + 2*(p + q + 1)
+        if (fit.aic < best.aic)
+        {
+          best.aic <- fit.aic
+          best.fit <- fit
+          best.model <- c(p,d,q,P,D,Q)
+        }
+      }
+    list(best.aic, best.fit, best.model)
+}
+
+best.arima <- get.best.arima(co2, maxord = c(2,2,2,2,2,2))
+best.arima
+
+library("forecast")
+futurVal <- forecast(best.arima,h=10, level=c(99.5))
+
+co2 %>%
+  Arima(order=c(1,1,1), seasonal=c(2,0,2), method = "CSS", lambda=0) %>%
+  forecast(h = 264) %>%
+  autoplot() +
+    ylab("co2") + xlab("Year") + ggtitle("co2 Forecasts for ARIMA(1,1,1)(2,0,2)[12]")
+
+
+
+
+```
+
 
 **Part 4 (4 points)**
 
