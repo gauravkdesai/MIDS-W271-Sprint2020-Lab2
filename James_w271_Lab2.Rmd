@@ -1,0 +1,230 @@
+---
+title: 'Statistical Methods for Discrete Response, Time Series, and Panel Data (W271): Lab 2'
+geometry: margin=1in
+output:
+  pdf_document:
+    latex_engine: xelatex
+  number_sections: yes
+  html_document: default
+  toc: yes
+fontsize: 11pt
+---
+
+## Instructions (Please Read Carefully):
+
+* $\textbf{Due Date: Sunday March 15 2020, 11:59pm}$
+
+* No page limit, but be reasonable
+
+* Do not modify fontsize, margin or line-spacing settings
+
+* One student from each group should submit the lab to their student github repository by the deadline; submission and revisions made after the deadline will not be graded
+
+* Answers should clearly explain your reasoning; do not simply 'output dump' the results of code without explanation 
+
+* Submit two files:
+    
+    1. A pdf file that details your answers. Include all R code used to produce the answers. Do not suppress the codes in your pdf file
+    
+    2. The R markdown (Rmd) file used to produce the pdf file
+  
+    The assignment will not be graded unless **both** files are submitted
+      
+* Name your files to include all group members names. For example the students' names are Stan Cartman and Kenny Kyle, name your files as follows:
+
+    * `StanCartman_KennyKyle_Lab2.Rmd`
+    * `StanCartman_KennyKyle_Lab2.pdf`
+            
+* Although it sounds obvious, please write your name on page 1 of your pdf and Rmd files
+
+* All answers should include a detailed narrative; make sure that your audience can easily follow the logic of your analysis. All steps used in modelling must be clearly shown and explained
+
+* If you use libraries and functions for statistical modeling that we have not covered in this course, you must provide an explanation of why such libraries and functions are used and reference the library documentation
+
+* For mathematical formulae, type them in your R markdown file. Do not e.g. write them on a piece of paper, snap a photo, and use the image file
+
+* Incorrectly following submission instructions results in deduction of grades
+
+* Students are expected to act with regard to UC Berkeley Academic Integrity.
+
+\newpage
+
+# The Keeling Curve
+
+In the 1950s, the geochemist Charles David Keeling observed a seasonal pattern in the amount of carbon dioxide present in air samples collected over the course of several years. He was able to attribute this pattern to the difference in the amount of land area and vegetation cover between the northern and southern hemipsheres, and the resulting variation in global rates of photosynthesis as the hemispheres' seasons alternated throughout the year. 
+
+In 1958 Keeling began continuous monitoring of atmospheric carbon dioxide concentrations from the Mauna Loa Observatory in Hawaii and soon observed a trend increase carbon dioxide levels in addition to the seasonal cycle. He was able to attribute this trend increase to growth in global rates of fossil fuel combustion. This trend has continued to the present.
+
+The `co2` data set in R's `datasets` package (automatically loaded with base R) is a monthly time series of atmospheric carbon dioxide concentrations measured in ppm (parts per million) at the Mauna Loa Observatory from 1959 to 1997. The curve graphed by this data is known as the 'Keeling Curve'.
+
+```{r}
+plot(co2, ylab = expression("CO2 ppm"), col = 'blue', las = 1)
+title(main = "Monthly Mean CO2 Variation")
+```
+
+\newpage
+
+**Part 1 (4 points)**
+
+Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This should include thorough analyses of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed.
+
+```{r}
+# sending the data to a tsibble object and examining head and tail
+co2.series <- as_tsibble(ts(co2, start=c(1959,1), frequency=12))
+head(co2.series)
+#autoplot(co2.series)
+tail(co2.series)
+```
+
+After converting the time series to a tsibble object, we look at the head and tail of the time series. The time series does not appear to be mean-stationary over time, with the concentration of parts per million steadily rising. 
+
+```{r}
+# plotting the series / ACF / PACF
+co2.series %>% gg_tsdisplay(plot_type="partial")
+```
+
+In this chart, we examine the plot, along with the plot of autocorrelation and partial autocorrelations. The ACF plot indicates a high degree of autocorrelation, as even after 24 lags, the series displays statistically significant autocorrelation. The PACF plot indicates that after lag 2, the 'memory' of the series starts to trail off, perhaps indicating an AR(2) model would be appropriate.  It should be noted however, that lags 12 and 13 also display statistical significance, perhaps indicating yearly seasonality.
+
+```{r}
+# decomposing the series into trend, seasonality, and remainder
+co2.series %>% model(STL(value)) %>% components() %>% autoplot()
+```
+
+This chart breaks the time series down into its component parts, with an upward trend clearly visible, as well as a regular seasonal trend, perhaps corroborating what was seen on the PACF chart.
+
+**Part 2 (3 points)**
+
+Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals. Compare this to a quadratic time trend model. Discuss whether a logarithmic transformation of the data would be appropriate. Fit a suitable polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020.
+
+```{r}
+# putting the time series into a data frame to make things easier
+co2.df <- data.frame(index = seq(1:468), date = co2.series$index, value = co2.series$value)
+head(co2.df)
+```
+
+
+```{r}
+# constructing a linear time trend and capturing the residuals
+linear.co2 <- lm(value ~ index, data=co2.df) 
+summary(linear.co2)
+co2.df$linear.resid <- linear.co2$residuals
+
+# plotting the residuals of the linear time trend
+ggplot(data=co2.df, aes(x = co2.df$index, y = co2.df$linear.resid)) + geom_point()
+```
+
+The expected value of the residuals does not appear to be zero, and appears to vary over time, meaning a linear trend is not well suited to this data.
+
+```{r}
+# constructing a quadratic time trend and capturing the residuals
+quadratic.co2 <- lm(value ~ index + I(index^2), data=co2.df)
+summary(quadratic.co2)
+co2.df$quad.resid <- quadratic.co2$residuals
+
+# plotting the residuals of the quadratic time trend
+ggplot(data=co2.df, aes(x = co2.df$index, y = co2.df$quad.resid)) + geom_point()
+```
+
+The expectation of the residuals appears to be much closer to zero, indicating that a higher order polynomial is a better fit than a linear time trend. There does still appear to be some variation in the residuals with time, and so it may also be possible that even a higher order polynomial could be more appropriate. In addition, a logarithmic transformation could be appropriate if it were thought that the variance of the time series was increasing with time. From the original time series plot, however, this does not appear to be the case, and we decide not to utilize one in our final specification,
+
+```{r}
+# constructing a cubic time trend and capturing the residuals
+cubic.co2 <- lm(value ~ index + I(index^2) + I(index^3), data=co2.df)
+summary(cubic.co2)
+co2.df$cubic.resid <- cubic.co2$residuals
+
+# plotting the residuals of the cubic time trend
+ggplot(data=co2.df, aes(x = co2.df$index, y = cubic.co2$residuals)) + geom_point()
+```
+
+Judging from the residuals, this cubic trend does the best job or removing any relationship between the residuals and time.
+
+```{r}
+# constructing a cubic time trend with seasonal coefficients and capturing the residuals
+Seas <- cycle(co2)
+seasonal.co2 <- lm(co2.df$value ~ co2.df$index + I(co2.df$index^2) + I(co2.df$index^3) + factor(Seas))
+summary(seasonal.co2)
+co2.df$seasonal.resid <- seasonal.co2$residuals
+
+# plotting the residuals of the seasonal time trend
+ggplot(data=co2.df, aes(x = co2.df$index, y = seasonal.co2$residuals)) + geom_point()
+```
+
+The inclusion of a dummy seasonality variable does not appear to do a good job of specifying the data, as there now appears to be a pattern in the residuals that was not there before.
+
+```{r}
+library(forecast)
+predict.data = data.frame(x = seq(469, 756, 1))
+predict(linear.co2, newdata=data.frame(x = seq(469,756,1)), se.fit=TRUE)
+```
+
+**Part 3 (3 points)**
+
+Following all appropriate steps, choose an ARIMA model to fit to the series. Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. Write your model (or models) using backshift notation. Use your model (or models) to generate forecasts to the year 2020. 
+
+Step 1: Conduct EDA to determine if a transformation is necessary to make stationary
+- This step has already been done and a transformation will be necessary
+
+Step 2: Transform the series if needed
+- This step is carried out below through first differencing
+
+```{r}
+# creating a dataframe of differenced values and plotting
+diff.df <- data.frame(index = co2.df$index[-1], difference = diff(co2))
+ggplot(diff.df, aes(x=index, y=difference)) + geom_line()
+```
+
+Step 3: Estimate several `ARIMA(p,d,q)x(P,D,Q)s` models, with starting values coming from the examination of time series plot, ACF, and PACF.
+- The PACF plot indicates yearly seasonality, so we begin with a model of ARIMA(0,0,0)(1,1,0) as a baseline 
+
+```{r}
+# baseline model > ARIMA(0,0,0)(1,1,0)
+AIC(arima(co2, order=c(0,0,0), seas=list(order=c(1,1,0), 12)))
+```
+
+Since the ACF chart also indicated that there was significant auto-regressive nature to the data, we compare the baseline model with a model that incorporates this as well
+
+```{r}
+# second model > ARIMA(12,1,0)(1,1,0)
+AIC(arima(co2, order=c(12,1,0), seas=list(order=c(1,1,0), 12)))
+```
+
+This model indicates a much better AIC than the baseline. In the next model, we increase the order to see if this further improves specification.
+
+```{r}
+# third model > ARIMA(24,1,0)(1,1,0)
+AIC(arima(co2, order=c(24,1,0), seas=list(order=c(1,1,0), 12)))
+```
+
+This does improve specification moderately, and so we will keep the increased order in our last specification. For our last specification, we will add moving average as well to understand if prior white noise terms improve specification as well.
+
+```{r}
+# fourth model > ARIMA(24,1,12)(1,1,0)
+AIC(arima(co2, order=c(24,1,12), seas=list(order=c(1,1,0), 12)))
+```
+
+Adding a moving average term improves specification further, and so we keep all terms.
+
+**Part 4 (4 points)**
+
+The file `co2_weekly_mlo.txt` contains weekly observations of atmospheric carbon dioxide concentrations measured at the Mauna Loa Observatory from 1974 to 2020, published by the National Oceanic and Atmospheric Administration (NOAA). Convert these data into a suitable time series object, conduct a thorough EDA on the data, and address the problem of missing observations. Describe how the Keeling Curve evolved from 1997 to the present and compare current atmospheric CO2 levels to those predicted by your forecasts in Parts 2 and 3. Use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2 and 3 over the entire period.
+
+
+
+**Part 5 (3 points)**
+
+Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+
+**Part 6 (3 points)**
+
+Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric C02 levels in the year 2100. How confident are you that these are accurate predictions?
+
+
+
+
+
+
+
+
+
+
