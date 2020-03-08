@@ -56,21 +56,70 @@ Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This shou
 **Answer**
 ```{r}
 head(co2)
+tail(co2)
 str(co2)
 summary(co2)
+hist(co2)
 
 co2.ts <- as_tsibble(co2)
 summary(co2.ts)
-head(co2.ts)
-str(co2.ts)
 
-plot(co2.ts, type="l")
+#plot(co2.ts, type="l")
 autoplot(co2.ts)
-stats::decompose(co2)
-acf(co2.ts)
-pacf(co2.ts)
+co2.components <- stats::decompose(co2) 
+co2.components$random %>% autoplot()
+co2.components$random[c(11:16)]  %>% gg_tsdisplay(plot_type = "partial")
+acf(co2.components$random, na.action = na.omit)
+pacf(co2.components$random, na.action = na.omit) # residuals still have lot of autocorrelations
+pacf(co2.ts) # indicates seasonal component
+pacf(co2.ts) # indicates AR(1) component
 co2.ts %>% model(STL(value)) %>% components() %>% autoplot()
 co2.ts %>% gg_tsdisplay(plot_type = "partial")
+co2.ts %>% ggplot(aes(x = value)) + geom_histogram()
+
+co2.ts %>%
+  gg_season(y=value, period = "year")+
+  ylab("CO2 emission")+
+    ggtitle("Seasonal plot : Monthly CO2 emission")
+# higher CO2 emissions in April to June and dip in September-October probably due to differnce in northan hemisphere and southern hemisphere attributes (like population, vegotation etc.)
+# also year on year the patter is increasing
+
+co2.ts %>%
+  gg_subseries(y=value, period = "year")+
+  ylab("CO2 emission")+
+  xlab("Years")+
+  ggtitle("Seasonal subseries plot : Monthly CO2 emission")
+#Same observations as above
+
+co2.ts %>%
+  gg_lag(y=value, period = "year")
+
+co2.ts %>% 
+  ACF(y=value, lag_max = 48) %>%
+  autoplot() #positive autocorrelations for large number of lags indicate seasonality. 
+# The seasonality autocorelation is at highest 12 months apart and drop s at around 6 months interval.
+
+lambda <- co2.ts %>%
+  features(value, features=guerrero) %>%
+  pull(lambda_guerrero)
+co2.ts %>% autoplot(box_cox(value, lambda))
+co2.ts.comp <- co2.ts %>% model(STL(box_cox(value, lambda))) 
+
+co2.ts.comp %>% components() %>% autoplot()
+
+co2.ts.comp %>% components() %>%
+  gg_subseries(y=season_year)
+
+# Lets look ate residuals
+
+co2.ts.comp  %>% components() %>% select("remainder") %>%
+  ggplot(aes(x=remainder)) +geom_histogram()
+
+co2.ts.comp  %>% components() %>% select("remainder") %>%
+  autoplot()
+  
+co2.ts.comp  %>% components() %>% select("remainder") %>%
+  gg_tsdisplay()
 ```
 
 **Part 2 (3 points)**
