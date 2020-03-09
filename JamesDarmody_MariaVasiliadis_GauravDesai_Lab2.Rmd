@@ -60,14 +60,13 @@ head(co2)
 tail(co2)
 str(co2)
 summary(co2)
-hist(co2$value)
+hist(co2)
 ```
 
-There are no missing values. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels. So lets look at it from time dimension.
+There are no missing values. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
 
 ```{r}
 co2.ts <- as_tsibble(co2)
-#summary(co2.ts)
 autoplot(co2.ts,.vars = value)
 ```
 We observe two things
@@ -84,10 +83,10 @@ We note that seasonal cycle ups and downs are growing with time, so we may need 
 
 
 ```{r}
-co2.ts %>% gg_tsdisplay(plot_type = "partial")
+co2.ts %>% gg_tsdisplay(plot_type = "partial", y = value)
 ```
 
-The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again at multples of 12.
+The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multples of 12 months.
 This indicates that the model could be AR model with 12 months seasonal cycles.
 
 No lets look at each component one by one starting with trend
@@ -98,9 +97,9 @@ ggplot(data=co2.ts.components)+
   geom_line(aes(x=index, y=trend)) +
   ggtitle("Trend")
 ```
-There are minor bumps and dips but there is no major shocks or sudden movements in trend.
+There are minor bumps and dips but there is no major shock or sudden movement in trend.
 
-Now lets look at seasons
+Now lets look at seasonal cycles.
 
 ```{r}
 co2.ts %>%
@@ -108,18 +107,18 @@ co2.ts %>%
   ylab("CO2 emission")+
     ggtitle("Seasonal plot : Monthly CO2 emission")
 ```
-We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern himisphere vs southern hemisphere. Population, vegitation and other attributes of these two halfs of earth are quite different which could potentially cause this seasonal effect.
+We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern hemisphere vs southern hemisphere. Population, vegitation and other attributes of these two halves of earth are quite different which could potentially cause this seasonal effect.
 
-Now lets look at same data from another angel.
+Now lets look at same data from another angle.
 ```{r}
 co2.ts %>%
   gg_subseries(y=value, period = "year")+
-  geom_hline(aes(yintercept=mean(co2.ts$value), colour="red"))+
+  geom_hline(aes(yintercept=mean(co2.ts$value)), colour="red")+
   ylab("CO2 emission")+
   xlab("Years")+
   ggtitle("Seasonal subseries plot : Monthly CO2 emission")
 ```
-It is more or less same observation that northern summer increases CO2 emission and southern summer decreases CO2 eission within a year. But we can cearly see that CO2 emission is on the rise year on year.
+It is more or less same observation that northern summer increases CO2 emission and southern summer decreases CO2 eission within a year. But we can cearly see that CO2 emission is on the rise year on year for each and every month.
 
 Since we saw earlier that seasonal patterns are are increasin in variance, we can try to transform them so the seasonal changes are uniform across time series. This is desirable property for finding good model fit.
 
