@@ -120,43 +120,162 @@ co2.ts %>%
 ```
 It is more or less same observation that northern summer increases CO2 emission and southern summer decreases CO2 eission within a year. But we can cearly see that CO2 emission is on the rise year on year for each and every month.
 
-Since we saw earlier that seasonal patterns are are increasin in variance, we can try to transform them so the seasonal changes are uniform across time series. This is desirable property for finding good model fit.
+Since we saw earlier that seasonal patterns are are increasin in variance, we can try to transform it so the seasonal changes are uniform across time series. This is desirable property for finding a good model fit.
 
 ```{r}
 lambda <- co2.ts %>%
   features(value, features=guerrero) %>%
   pull(lambda_guerrero)
+
+co2.ts.trans <- as_tsibble(ts( box_cox(co2.ts$value, lambda), start = c(1959,1)))
 co2.ts.trans.comp <- co2.ts %>% model(STL(box_cox(value, lambda))) 
 
 co2.ts.trans.comp %>% components() %>% autoplot() +
   ggtitle(paste("Box-Cox Tranformed Decompositions for lambda=",round(lambda,3)))
 ```
-After transformation we can see the seasonal pattern remains in same bounds.
+After transformation we can see the seasonal pattern variance remains constant throughout.
 
 
 Now lets look at residuals
 
 ```{r}
 
-# Lets look ate residuals
+# Lets look at residuals
 
+#Before box-cox transformation
+co2.ts.components  %>% select("remainder") %>%
+  ggplot(aes(x=remainder)) +geom_histogram()
+
+#After box-cox transformation
 co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
   ggplot(aes(x=remainder)) +geom_histogram()
+
+
+```
+Both before and after box-cox transformation residuals look fairly normally distributed
+
+```{r}
+
+co2.ts.components %>% select("remainder") %>%
+  autoplot()
 
 co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
   autoplot()
   
+```
+
+Residuals appear to be white noise with no trend or seasonal patterns
+
+```{r}
+
+co2.ts.components %>% select("remainder") %>%
+  gg_tsdisplay(plot_type = "partial")
+
 co2.ts.trans.comp %>% components() %>% select("remainder") %>%
-  gg_tsdisplay()
+  gg_tsdisplay(plot_type = "partial")
 ```
 
 **Part 2 (3 points)**
 
 Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals. Compare this to a quadratic time trend model. Discuss whether a logarithmic transformation of the data would be appropriate. Fit a suitable polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020. 
 
+Lets first fir a linear time trend model
+
+```{r}
+time.index <- 1:length(co2.ts$index)
+mod.ln.1 <- lm(formula = value ~ time.index, data=co2.ts)
+summary(mod.ln.1)
+plot(mod.ln.1)
+
+```
+
+The residuals show a pattern indicating linear model is not able to capture the curvature of the trend. Lets try quadratic term
+
+```{r}
+mod.ln.2 <- lm(formula = value ~ time.index + I(time.index^2), data=co2.ts)
+summary(mod.ln.2)
+plot(mod.ln.2)
+
+```
+
+The residuals are showing much better fitment. Now lets try cubic term and see if we get any more improvements.
+
+```{r}
+mod.ln.3 <- lm(formula = value ~ time.index + I(time.index^2) + I(time.index^3), data=co2.ts)
+summary(mod.ln.3)
+plot(mod.ln.3)
+
+```
+This model is even better fit, but Q-Q plot shows deviation at start and end. So lets try taking log of value and see if that scale fit any better.
+
+
+```{r}
+mod.ln.4 <- lm(formula = log(value) ~ time.index + I(time.index^2)+ I(time.index^3), data=co2.ts)
+summary(mod.ln.4)
+plot(mod.ln.4)
+
+```
+
+Taking log doesn't improve much.
+
+
+So finally lets choose the best of the models so far which is cubic model and add seasonal dummy variables for Jan to December
+
+```{r}
+co2.df <- data.frame(value=co2.ts$value, time.index=time.index, season=factor(time.index%%12, ordered = F))
+mod.ln.5 <- lm(formula = value ~ 0 + time.index + I(time.index^2)  + I(time.index^3) + season, data=co2.df)
+summary(mod.ln.5)
+plot(mod.ln.5)
+
+
+```
+
+This model has better R-square than any of the previous models. Lets use this model to forcast for year 2020
+
+```{r}
+time.index.2020 = seq(from=(2020-1959)*12+1,length.out=12)
+co2.2020.df <- data.frame(time.index= time.index.2020, season=factor(time.index.2020%%12, ordered = F))
+
+co2.20202.pred <- predict(object = mod.ln.5, newdata = co2.2020.df)
+
+co2.20202.pred.ts <- as_tsibble(ts(data=co2.20202.pred, start = c(2020,1), frequency=12))
+
+co2.20202.pred.ts %>%
+  autoplot(.vars = value)
+
+```
+
 **Part 3 (3 points)**
 
 Following all appropriate steps, choose an ARIMA model to fit to the series. Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. Write your model (or models) using backshift notation. Use your model (or models) to generate forecasts to the year 2020. 
+
+```{r}
+co2.ts %>% 
+  model(arima=ARIMA(value~0+pdq(0:9,0:1,0:9)+PDQ(0:5,0:12,0:5))) %>% 
+  report()
+
+models <- co2.ts %>% 
+  model(arima=ARIMA(value~0+pdq(0:9,0:1,0:9)+PDQ(0:5,0:12,0:5)))
+
+fit(models$arima)
+str(models$arima)
+
+models.all = list()
+
+
+for(p in 1:1) for(d in 1:1) for(q in 1:1) {
+  for(P in 1:1) for(D in 1:1) for(Q in 1:1){
+    
+    models.all = append(models.all,report(model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q)), .safely = T)))
+      
+  } 
+}
+models.all[1]$arima[[1]]$fit
+str(models.all)
+class(models.all[[1]])
+methods(class='lst_mdl')
+
+```
 
 **Part 4 (4 points)**
 
