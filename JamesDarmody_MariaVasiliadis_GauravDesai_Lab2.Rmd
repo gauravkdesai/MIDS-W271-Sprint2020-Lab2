@@ -32,6 +32,12 @@ library(dplyr)
 #library(purrr)
 #library(tidyr)
 #library(nnet)
+library(purrr)
+library(imputeTS)
+library(tsibble)
+library(fabletools)
+library(feasts)
+library(fable)
 ```
 
 # The Keeling Curve
@@ -257,19 +263,51 @@ co2.ts %>%
 models <- co2.ts %>% 
   model(arima=ARIMA(value~0+pdq(0:9,0:1,0:9)+PDQ(0:5,0:12,0:5)))
 
-fit(models$arima)
-str(models$arima)
 
-models.all = list()
+no.p=no.P=1
+no.q=no.Q=1
+no.d=no.D=1
+no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
+models.definitions = model.fit = vector(mode="list", length = no.of.models)
 
+params.df <- expand.grid(p=0:no.p, d=0:no.d, q=0:no.q, P=0:no.P, D=0:no.D, Q=0:no.Q)
+class(params.df)
 
-for(p in 1:1) for(d in 1:1) for(q in 1:1) {
-  for(P in 1:1) for(D in 1:1) for(Q in 1:1){
-    
-    models.all = append(models.all,report(model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q)), .safely = T)))
-      
+i<-1
+for(p in 0:no.p) for(d in 0:no.d) for(q in 0:no.q) {
+  for(P in 0:no.P) for(D in 0:no.D) for(Q in 0:no.Q){
+    #models.definitions[[i]]=report(model(.data=co2.ts,ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))))
+    models.definitions[[i]]=ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))
+    model.fit[[i]] = model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q)))
+    i<-i+1
   } 
 }
+
+co2.ts %>%
+  model(ARIMA(value~0+pdq(params.df$p,params.df$d,params.df$q)+PDQ(params.df$P,params.df$D,params.df$Q))) %>%
+  report()
+
+params.df %>% rowwise()%>%
+  model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))) %>%
+  report()
+
+mabl
+models.definitions[[1]]
+tidy(model.fit[[1]])
+glance(model.fit[[1]],model.fit[[2]])
+lapply(model.fit, glance)
+class(unlist(model.fit[1:2], recursive=F, use.names = F))
+report(unlist(models.definitions, recursive = F))
+flatten_dfr(models.definitions)
+class(models.definitions[[1]])
+class(unlist(models.definitions, use.names = F))
+as.array()
+glance(model(.data=co2.ts, unlist(models.definitions, use.names = F), .safely = F))
+
+models.all[[1]]
+array(unlist(models.all))
+class(models.all)
+models.estimates = glance(model(.data=co2.ts, unlist(models.all[1:2]), .safely = T))
 models.all[1]$arima[[1]]$fit
 str(models.all)
 class(models.all[[1]])
@@ -280,6 +318,48 @@ methods(class='lst_mdl')
 **Part 4 (4 points)**
 
 The file `co2_weekly_mlo.txt` contains weekly observations of atmospheric carbon dioxide concentrations measured at the Mauna Loa Observatory from 1974 to 2020, published by the National Oceanic and Atmospheric Administration (NOAA). Convert these data into a suitable time series object, conduct a thorough EDA on the data, and address the problem of missing observations. Describe how the Keeling Curve evolved from 1997 to the present and compare current atmospheric CO2 levels to those predicted by your forecasts in Parts 2 and 3. Use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2 and 3 over the entire period.  
+
+```{r}
+co2.noaa.weekly.df <- read.table('co2_weekly_mlo.txt', header = FALSE, comment.char='#', na.strings = '-999.99')
+colnames(co2.noaa.weekly.df) <- c('year','month','day','decimal.day', 'record.value', '#days', 'one.year.ago','ten.years.ago','since.1800.diff')
+```
+
+```{r}
+head(co2.noaa.weekly.df)
+tail(co2.noaa.weekly.df)
+```
+```{r}
+summary(co2.noaa.weekly.df) # 20 readings are missing
+describe(co2.noaa.weekly.df)
+co2.noaa.weekly.df <- co2.noaa.weekly.df %>%
+  mutate(record.date=ymd(paste(year,month,day)))
+```
+
+
+```{r}
+co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = 365/7), class="matrix")
+head(co2.noaa.weekly.ts)
+tail(co2.noaa.weekly.ts)
+summary(co2.noaa.weekly.ts)
+```
+
+Missing data analysis. Fill in with interpolation from neighbours. We can try and fit a model and use that model instead for interpolation.
+```{r}
+co2.noaa.weekly.ts%>%
+  filter(is.na(value))
+
+co2.noaa.weekly.ts <- na_interpolation(co2.noaa.weekly.ts, option = "spline")
+
+co2.noaa.weekly.ts%>%
+  filter(is.na(value))
+
+```
+
+Plot Keeling curve
+```{r}
+
+
+```
 
 **Part 5 (3 points)**
 
