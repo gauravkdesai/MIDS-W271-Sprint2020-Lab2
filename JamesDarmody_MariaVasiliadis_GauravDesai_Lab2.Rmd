@@ -38,6 +38,8 @@ library(tsibble)
 library(fabletools)
 library(feasts)
 library(fable)
+library(lubridate)
+library(forecast)
 ```
 
 # The Keeling Curve
@@ -112,6 +114,8 @@ co2.ts %>%
   gg_season(y=value, period = "year")+
   ylab("CO2 emission")+
     ggtitle("Seasonal plot : Monthly CO2 emission")
+
+ggseasonplot(as.ts(co2.ts), year.labels=FALSE, continuous=TRUE, polar = TRUE) #Looks good may be?
 ```
 We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern hemisphere vs southern hemisphere. Population, vegitation and other attributes of these two halves of earth are quite different which could potentially cause this seasonal effect.
 
@@ -242,11 +246,11 @@ This model has better R-square than any of the previous models. Lets use this mo
 time.index.2020 = seq(from=(2020-1959)*12+1,length.out=12)
 co2.2020.df <- data.frame(time.index= time.index.2020, season=factor(time.index.2020%%12, ordered = F))
 
-co2.20202.pred <- predict(object = mod.ln.5, newdata = co2.2020.df)
+co2.2020.pred <- predict(object = mod.ln.5, newdata = co2.2020.df)
 
-co2.20202.pred.ts <- as_tsibble(ts(data=co2.20202.pred, start = c(2020,1), frequency=12))
+co2.2020.pred.ts <- as_tsibble(ts(data=co2.20202.pred, start = c(2020,1), frequency=12))
 
-co2.20202.pred.ts %>%
+co2.2020.pred.ts %>%
   autoplot(.vars = value)
 
 ```
@@ -357,7 +361,40 @@ co2.noaa.weekly.ts%>%
 
 Plot Keeling curve
 ```{r}
+co2.noaa.weekly.ts %>%
+  autoplot(.vars = value) +
+  geom_smooth() +
+  labs(title = "Keeling Curve till 2020", y="Co2 emission (units)", x="Year")
+  
+```
 
+We can see that from about 1995 onwards the trend has picked up and increasing faster than pre 1995 trend.
+
+Now lets compare the current CO2 levels to predicted from Q2 and 3
+
+```{r}
+
+co2.noaa.weekly.ts.2020 <- co2.noaa.weekly.ts %>%
+  filter_index("2019-12-31" ~.) 
+
+co2.noaa.monthly.ts.2020 <- co2.noaa.weekly.ts %>%
+  filter_index("2019-12-31" ~.) %>%
+  as_tibble() %>%
+  mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
+  group_by(yearmonth) %>%
+  summarise(avg_value=mean(value)) %>%
+  as_tsibble(index = yearmonth, value=avg_value)
+
+
+autoplot(co2.2020.pred.ts, .vars = value, color="red") +
+  autolayer(co2.noaa.monthly.ts.2020, .vars = avg_value, color="blue") 
+#TODO add part 3 2020 predicted
+
+```
+The predicted CO2 levels are lesser compared to actual levels.
+
+
+```{r}
 
 ```
 
