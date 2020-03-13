@@ -248,7 +248,7 @@ co2.2020.df <- data.frame(time.index= time.index.2020, season=factor(time.index.
 
 co2.2020.pred <- predict(object = mod.ln.5, newdata = co2.2020.df)
 
-co2.2020.pred.ts <- as_tsibble(ts(data=co2.20202.pred, start = c(2020,1), frequency=12))
+co2.2020.pred.ts <- as_tsibble(ts(data=co2.2020.pred, start = c(2020,1), frequency=12))
 
 co2.2020.pred.ts %>%
   autoplot(.vars = value)
@@ -401,6 +401,64 @@ The predicted CO2 levels are lesser compared to actual levels.
 **Part 5 (3 points)**
 
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+
+
+```{r}
+#Observe trend, seasonal, and remainder component 
+autoplot(stl(co2.noaa.weekly.ts,s.window='periodic'))
+
+#Seasonally adjust weekly dataset
+co2.noaa.weekly.ts.SA <- stl(co2.noaa.weekly.ts, s.window='periodic') %>% seasadj()
+co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
+
+#Split NSA data into training and test
+co2.noaa.weekly.ts.SA.test <- tail(co2.noaa.weekly.ts, 104)
+co2.noaa.weekly.ts.SA.training <- head(co2.noaa.weekly.ts, 2284)
+
+co2.noaa.weekly.ts.SA.training %>% ggAcf()
+co2.noaa.weekly.ts.SA.training %>% ggPacf()
+co2.noaa.weekly.ts.SA.training %>% gg_tsdisplay()
+
+#Split NSA data into training and test
+co2.noaa.weekly.ts.test <- tail(co2.noaa.weekly.ts, 104)
+co2.noaa.weekly.ts.training <- head(co2.noaa.weekly.ts, 2284)
+
+co2.noaa.weekly.ts %>% ggAcf()
+co2.noaa.weekly.ts %>% ggPacf()
+co2.noaa.weekly.ts %>% gg_tsdisplay()
+
+
+get.best.arima <- function(x.ts, maxord = c(1,1,1,1,1,1))
+{
+  best.aic <-1000000
+  n <- length(x.ts)
+  for (p in 0:maxord[1]) for(d in 0:maxord[2]) for(q in 0:maxord[3])
+      for (P in 0:maxord[4]) for(D in 0:maxord[5]) for(Q in 0:maxord[6])
+      {
+        fit <- Arima(x.ts, order = c(p,d,q),
+                     seas = list(order = c(P,D,Q),
+                                 frequency(x.ts)), method = "CSS")
+        fit.aic <- -2*fit$loglik + 2*(length(fit$coef))
+        if (fit.aic < best.aic)
+        {
+          best.aic <- fit.aic
+          best.fit <- fit
+          best.model <- c(p,d,q,P,D,Q)
+        }
+      }
+    list(best.aic, best.fit, best.model)
+}
+
+best.arima.training1 <- get.best.arima(as.ts(co2.noaa.weekly.ts.training), maxord = c(1,1,1,1,1,1))
+best.arima.training1
+
+best.arima.training2 <- get.best.arima(as.ts(co2.noaa.weekly.ts.SA.training), maxord = c(1,1,1,1,1,1))
+
+best.arima.training1
+best.arima.training2
+
+```
+With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
 
 **Part 6 (3 points)**
 
