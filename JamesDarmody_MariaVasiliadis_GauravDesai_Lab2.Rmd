@@ -40,6 +40,8 @@ library(feasts)
 library(fable)
 library(lubridate)
 library(forecast)
+library(seasonal)
+library(tsbox)
 ```
 
 # The Keeling Curve
@@ -373,28 +375,33 @@ We can see that from about 1995 onwards the trend has picked up and increasing f
 Now lets compare the current CO2 levels to predicted from Q2 and 3
 
 ```{r}
-
-co2.noaa.weekly.ts.2020 <- co2.noaa.weekly.ts %>%
-  filter_index("2019-12-31" ~.) 
-
-co2.noaa.monthly.ts.2020 <- co2.noaa.weekly.ts %>%
+co2.noaa.weekly.ts %>%
   filter_index("2019-12-31" ~.) %>%
-  as_tibble() %>%
-  mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
-  group_by(yearmonth) %>%
-  summarise(avg_value=mean(value)) %>%
-  as_tsibble(index = yearmonth, value=avg_value)
-
-
-autoplot(co2.2020.pred.ts, .vars = value, color="red") +
-  autolayer(co2.noaa.monthly.ts.2020, .vars = avg_value, color="blue") 
+  mutate(index = as.Date(index)) %>%
+  autoplot(.vars = value, color="blue") +
+  autolayer(co2.2020.pred.ts, .vars = value, color="red") 
+  
 #TODO add part 3 2020 predicted
 
 ```
 The predicted CO2 levels are lesser compared to actual levels.
 
-
+TODO compare monthly average curve with model
 ```{r}
+co2.ts.part2.fitted <- co2.ts %>%
+  mutate(value=mod.ln.5$fitted.values)
+
+co2.noaa.weekly.ts %>%
+  as_tibble() %>%
+  mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
+  group_by(yearmonth) %>%
+  summarise(avg_value=mean(value)) %>%
+  as_tsibble(index = yearmonth, value=avg_value) %>%
+  autoplot(.vars = avg_value, color="blue") +
+  autolayer(co2.ts.part2.fitted, .vars=value, color="red") +
+  labs(title="Part 2 model fitted values vs NOAA")
+
+
 
 ```
 
@@ -457,6 +464,13 @@ best.arima.training2 <- get.best.arima(as.ts(co2.noaa.weekly.ts.SA.training), ma
 best.arima.training1
 best.arima.training2
 
+```
+
+```{r gd}
+co2.noaa.weekly.ts %>%
+  as_tibble() %>%
+  as.ts()
+ts_seas(co2.noaa.weekly.ts)
 ```
 With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
 
