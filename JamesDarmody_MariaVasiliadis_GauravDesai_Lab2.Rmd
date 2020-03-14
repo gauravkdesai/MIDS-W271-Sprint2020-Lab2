@@ -442,31 +442,25 @@ Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) 
 
 Lets first see how seasonal decomposition looks
 ```{r}
-co2.noaa.weekly.ts%>%
-  as.ts(frequency=week.frequency) %>%
-  decompose(type = "multiplicative") %>% 
+co2.noaa.weekly.ts %>%
+  stl(s.window = week.frequency) %>%
   autoplot()
-
+```
+Now lets substract sesonal data from time series to get sesonally adjusted time series
+```{r}
+co2.noaa.weekly.ts.components <- stl(co2.noaa.weekly.ts ,s.window = week.frequency)$time.series
+co2.noaa.weekly.ts.components.seasonal <- co2.noaa.weekly.ts.components[,'seasonal']
+co2.noaa.weekly.ts.SA <- as_tsibble(ts(co2.noaa.weekly.ts$value - co2.noaa.weekly.ts.components.seasonal,start = 1974.3795	, frequency = week.frequency))
+cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts),head(co2.noaa.weekly.ts.SA),tail(co2.noaa.weekly.ts.SA))
 ```
 
-Now lets derive seasonally adjusted (SA) series
-
+Lets check the SA time series
 ```{r}
-co2.noaa.weekly.ts.components <- co2.noaa.weekly.ts%>%
-  as.ts(frequency=week.frequency) %>%
-  decompose(type = "multiplicative")
-
-co2.noaa.weekly.ts.SA <- as_tsibble(as.ts(co2.noaa.weekly.ts,frequency=week.frequency) / co2.noaa.weekly.ts.components$seasonal)
-
-# check head and tail to verify the duration matches original Time Series
-cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts))
-cbind(head(co2.noaa.weekly.ts.SA),tail(co2.noaa.weekly.ts.SA))
-
-co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
-
 co2.noaa.weekly.ts.SA %>%
   autoplot()
+
 ```
+
 
 ```{r}
 #Seasonally adjust weekly dataset
