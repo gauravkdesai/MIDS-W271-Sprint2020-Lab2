@@ -394,6 +394,7 @@ The predicted CO2 levels are lesser compared to actual levels.
 
 Now lets compare monthly average curve with model forecasts
 ```{r}
+#First lets convert to monthly time series
 co2.noaa.monthly.ts <- co2.noaa.weekly.ts %>%
   as_tibble() %>%
   mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
@@ -401,17 +402,33 @@ co2.noaa.monthly.ts <- co2.noaa.weekly.ts %>%
   summarise(avg_value=mean(value)) %>%
   as_tsibble(index = yearmonth, value=avg_value) 
 
-summary(co2.noaa.monthly.ts) #> 1974 May to 20202 Feb
+summary(co2.noaa.monthly.ts) #> 1974 May to 2020 Feb
 
 
-co2.ts.part2.fitted <- co2.ts %>%
-  mutate(value=mod.ln.5$fitted.values)
+# Now predict using linear model for same time frame
+time.index.1974.may = seq(from=(1974-1959)*12+5,length.out=550)
+co2.noaa.like.df <- data.frame(time.index= time.index.1974.may, season=factor(time.index.1974.may%%12, ordered = F))
+co2.noaa.like.pred <- predict(object = mod.ln.5, newdata = co2.noaa.like.df)
+co2.noaa.like.pred.ts <- as_tsibble(ts(data=co2.noaa.like.pred, start = c(1974,5), frequency=12))
 
-  autoplot(.vars = avg_value, color="blue") 
+
+# now predict using Arima model selected in Q3
+co2.noaa.arima.pred.ts <- forecast(model.arima.best.q3, h=276) %>%
+  as_tibble() %>%
+  dplyr::select('Point Forecast') %>%
+  ts(start = c(1998,1), frequency = 12) %>%
+  as_tsibble() 
+
+model.arima.best.q3.fitted.ts <-model.arima.best.q3$fitted %>%
+  as_tsibble() 
 
 
-  autolayer(co2.ts.part2.fitted, .vars=value, color="red") +
-  labs(title="Part 2 model fitted values vs NOAA")
+co2.noaa.monthly.ts %>%
+  autoplot(.vars = avg_value, color="blue") +
+  autolayer(co2.noaa.like.pred.ts, .vars=value, color="red") +
+  autolayer(co2.noaa.arima.pred.ts, .vars=value, color="navy") +
+  autolayer(model.arima.best.q3.fitted.ts, .vars=value, color="navy") +
+  labs(title="Part 2 and 3 model predictions vs NOAA monthly average")
 
 
 
