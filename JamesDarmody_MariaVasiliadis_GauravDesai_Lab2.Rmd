@@ -349,7 +349,9 @@ co2.noaa.weekly.df <- co2.noaa.weekly.df %>%
 
 
 ```{r}
-co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = 365/7), class="matrix")
+week.frequency = 365/7
+co2.noaa.weekly.ts.raw <- ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = week.frequency)
+co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = week.frequency), class="matrix")
 head(co2.noaa.weekly.ts)
 tail(co2.noaa.weekly.ts)
 summary(co2.noaa.weekly.ts)
@@ -439,10 +441,32 @@ co2.noaa.monthly.ts %>%
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
 
+Lets first see how seasonal decomposition looks
 ```{r}
-#Observe trend, seasonal, and remainder component 
-autoplot(stl(co2.noaa.weekly.ts,s.window='periodic'))
+co2.noaa.weekly.ts%>%
+  as.ts(frequency=week.frequency) %>%
+  decompose(type = "multiplicative") %>% # Additive gave better remainder centered around 0 over multiplicative
+  autoplot()
 
+```
+
+Now lets derive seasonally adjusted (SA) series
+
+```{r}
+co2.noaa.weekly.ts.components <- co2.noaa.weekly.ts%>%
+  as.ts(frequency=week.frequency) %>%
+  decompose(type = "additive")
+
+co2.noaa.weekly.ts.SA <- as_tsibble(as.ts(co2.noaa.weekly.ts,frequency=week.frequency) - co2.noaa.weekly.ts.components$seasonal)
+
+# check head and tail to verify the duration matches original Time Series
+cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts))
+cbind(head(co2.noaa.weekly.ts.SA),tail(co2.noaa.weekly.ts.SA))
+
+co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
+```
+
+```{r}
 #Seasonally adjust weekly dataset
 co2.noaa.weekly.ts.SA <- stl(co2.noaa.weekly.ts, s.window='periodic') %>% seasadj()
 co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
