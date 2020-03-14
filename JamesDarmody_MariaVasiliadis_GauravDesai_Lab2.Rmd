@@ -349,11 +349,10 @@ co2.noaa.weekly.df <- co2.noaa.weekly.df %>%
 
 
 ```{r}
-week.frequency = 365/7
-co2.noaa.weekly.ts.raw <- ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = week.frequency)
-co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = week.frequency), class="matrix")
-head(co2.noaa.weekly.ts)
-tail(co2.noaa.weekly.ts)
+week.frequency = 365.25/7
+co2.noaa.weekly.ts.raw <- ts(data=co2.noaa.weekly.df$record.value,start = 1974.3795	, frequency = week.frequency)
+co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.3795	, frequency = week.frequency), class="matrix")
+cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts))
 summary(co2.noaa.weekly.ts)
 ```
 
@@ -399,7 +398,7 @@ Now lets compare monthly average curve with model forecasts
 #First lets convert to monthly time series
 co2.noaa.monthly.ts <- co2.noaa.weekly.ts %>%
   as_tibble() %>%
-  mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
+  mutate(yearmonth=yearmonth(yearweek(index))) %>%
   group_by(yearmonth) %>%
   summarise(avg_value=mean(value)) %>%
   as_tsibble(index = yearmonth, value=avg_value) 
@@ -445,7 +444,7 @@ Lets first see how seasonal decomposition looks
 ```{r}
 co2.noaa.weekly.ts%>%
   as.ts(frequency=week.frequency) %>%
-  decompose(type = "multiplicative") %>% # Additive gave better remainder centered around 0 over multiplicative
+  decompose(type = "multiplicative") %>% 
   autoplot()
 
 ```
@@ -455,15 +454,18 @@ Now lets derive seasonally adjusted (SA) series
 ```{r}
 co2.noaa.weekly.ts.components <- co2.noaa.weekly.ts%>%
   as.ts(frequency=week.frequency) %>%
-  decompose(type = "additive")
+  decompose(type = "multiplicative")
 
-co2.noaa.weekly.ts.SA <- as_tsibble(as.ts(co2.noaa.weekly.ts,frequency=week.frequency) - co2.noaa.weekly.ts.components$seasonal)
+co2.noaa.weekly.ts.SA <- as_tsibble(as.ts(co2.noaa.weekly.ts,frequency=week.frequency) / co2.noaa.weekly.ts.components$seasonal)
 
 # check head and tail to verify the duration matches original Time Series
 cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts))
 cbind(head(co2.noaa.weekly.ts.SA),tail(co2.noaa.weekly.ts.SA))
 
 co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
+
+co2.noaa.weekly.ts.SA %>%
+  autoplot()
 ```
 
 ```{r}
