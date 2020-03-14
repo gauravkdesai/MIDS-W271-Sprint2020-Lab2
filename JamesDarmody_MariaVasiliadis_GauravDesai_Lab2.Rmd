@@ -42,6 +42,8 @@ library(lubridate)
 library(forecast)
 library(seasonal)
 library(tsbox)
+library(tibble)
+library(svMisc)
 ```
 
 # The Keeling Curve
@@ -262,64 +264,60 @@ co2.2020.pred.ts %>%
 Following all appropriate steps, choose an ARIMA model to fit to the series. Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. Write your model (or models) using backshift notation. Use your model (or models) to generate forecasts to the year 2020. 
 
 ```{r}
-co2.ts %>% 
-  model(arima=ARIMA(value~0+pdq(0:9,0:1,0:9)+PDQ(0:5,0:12,0:5))) %>% 
-  report()
-
-models <- co2.ts %>% 
-  model(arima=ARIMA(value~0+pdq(0:9,0:1,0:9)+PDQ(0:5,0:12,0:5)))
-
-
-no.p=no.P=1
-no.q=no.Q=1
+no.p=no.P=2
+no.q=no.Q=2
 no.d=no.D=1
 no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
-models.definitions = model.fit = vector(mode="list", length = no.of.models)
+
+print(paste("Number of models to fit =",no.of.models))
 
 params.df <- expand.grid(p=0:no.p, d=0:no.d, q=0:no.q, P=0:no.P, D=0:no.D, Q=0:no.Q)
-class(params.df)
+i <- 1
 
-i<-1
-for(p in 0:no.p) for(d in 0:no.d) for(q in 0:no.q) {
-  for(P in 0:no.P) for(D in 0:no.D) for(Q in 0:no.Q){
-    #models.definitions[[i]]=report(model(.data=co2.ts,ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))))
-    models.definitions[[i]]=ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))
-    model.fit[[i]] = model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q)))
-    i<-i+1
-  } 
+funFitModel <- function(param.row){
+  progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
+  i <- i+1
+  p = param.row['p']
+  q = param.row['q']
+  d = param.row['d']
+  P = param.row['P']
+  Q = param.row['Q']
+  D = param.row['D']
+  
+  #print(paste(p,q,d,P,Q,D))
+  tryCatch({
+  model.fit = Arima(y=as.ts(co2.ts), order=c(p,d,q), seasonal=c(P,D,Q), lambda=lambda, include.drift = FALSE);
+  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+
+  return (model.info);
+  }, error=function(e){
+    return (data.frame())
+  })
+  
 }
 
-co2.ts %>%
-  model(ARIMA(value~0+pdq(params.df$p,params.df$d,params.df$q)+PDQ(params.df$P,params.df$D,params.df$Q))) %>%
-  report()
+model.fit.info.df <- do.call("rbind",(apply(params.df, 1,funFitModel )))
+colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+print("Top 6 models by BIC")
+model.fit.info.df %>%
+  arrange(bic) %>%
+  head()
 
-params.df %>% rowwise()%>%
-  model(.data=co2.ts, ARIMA(value~0+pdq(p,d,q)+PDQ(P,D,Q))) %>%
-  report()
 
-mabl
-models.definitions[[1]]
-tidy(model.fit[[1]])
-glance(model.fit[[1]],model.fit[[2]])
-lapply(model.fit, glance)
-class(unlist(model.fit[1:2], recursive=F, use.names = F))
-report(unlist(models.definitions, recursive = F))
-flatten_dfr(models.definitions)
-class(models.definitions[[1]])
-class(unlist(models.definitions, use.names = F))
-as.array()
-glance(model(.data=co2.ts, unlist(models.definitions, use.names = F), .safely = F))
-
-models.all[[1]]
-array(unlist(models.all))
-class(models.all)
-models.estimates = glance(model(.data=co2.ts, unlist(models.all[1:2]), .safely = T))
-models.all[1]$arima[[1]]$fit
-str(models.all)
-class(models.all[[1]])
-methods(class='lst_mdl')
 
 ```
+
+Using BIC as criteria we can see that ARIMA (0,1,1) with seasonality (2,0,1) as best model for CO2 time series. BIC for this model is least -5389.765. Note that this model uses lambda= -0.03432107 and no drift.
+
+Lets just save the model to forecast for year 2020
+
+```{r}
+model.arima.best.q3 = Arima(y=as.ts(co2.ts), order=c(0,1,1), seasonal=c(2,0,1), lambda=lambda, include.drift = FALSE);
+forecast(model.arima.best.q3, h=300) %>%
+  autoplot()
+```
+
+
 
 **Part 4 (4 points)**
 
