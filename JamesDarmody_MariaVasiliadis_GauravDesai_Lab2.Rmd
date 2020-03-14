@@ -313,8 +313,16 @@ Lets just save the model to forecast for year 2020
 
 ```{r}
 model.arima.best.q3 = Arima(y=as.ts(co2.ts), order=c(0,1,1), seasonal=c(2,0,1), lambda=lambda, include.drift = FALSE);
-forecast(model.arima.best.q3, h=300) %>%
-  autoplot()
+co2.2020.arima.pred.ts <- forecast(model.arima.best.q3, h=276) %>%
+  as_tibble() %>%
+  dplyr::select('Point Forecast') %>%
+  ts(start = c(1998,1), frequency = 12) %>%
+  as_tsibble() %>%
+  filter_index("2019-12-31" ~.) 
+
+co2.2020.arima.pred.ts %>%
+  autoplot(.vars = value) +
+  labs(title="2020 CO2 predictions from best fitted ARIMA (0,1,1) (2,0,1) model")
 ```
 
 
@@ -377,25 +385,31 @@ co2.noaa.weekly.ts %>%
   filter_index("2019-12-31" ~.) %>%
   mutate(index = as.Date(index)) %>%
   autoplot(.vars = value, color="blue") +
-  autolayer(co2.2020.pred.ts, .vars = value, color="red") 
-  
-#TODO add part 3 2020 predicted
+  autolayer(co2.2020.pred.ts, .vars = value, color="red") +
+  autolayer(co2.2020.arima.pred.ts, .vars = value, color="navy") +
+  labs(title="Year 2020 Actual vs Prediction from Linear Model and ARIMA model")
 
 ```
 The predicted CO2 levels are lesser compared to actual levels.
 
-TODO compare monthly average curve with model
+Now lets compare monthly average curve with model forecasts
 ```{r}
-co2.ts.part2.fitted <- co2.ts %>%
-  mutate(value=mod.ln.5$fitted.values)
-
-co2.noaa.weekly.ts %>%
+co2.noaa.monthly.ts <- co2.noaa.weekly.ts %>%
   as_tibble() %>%
   mutate(yearmonth=yearmonth(ymd_hms(index))) %>%
   group_by(yearmonth) %>%
   summarise(avg_value=mean(value)) %>%
-  as_tsibble(index = yearmonth, value=avg_value) %>%
-  autoplot(.vars = avg_value, color="blue") +
+  as_tsibble(index = yearmonth, value=avg_value) 
+
+summary(co2.noaa.monthly.ts) #> 1974 May to 20202 Feb
+
+
+co2.ts.part2.fitted <- co2.ts %>%
+  mutate(value=mod.ln.5$fitted.values)
+
+  autoplot(.vars = avg_value, color="blue") 
+
+
   autolayer(co2.ts.part2.fitted, .vars=value, color="red") +
   labs(title="Part 2 model fitted values vs NOAA")
 
