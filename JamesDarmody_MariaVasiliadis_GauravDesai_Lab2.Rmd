@@ -94,18 +94,19 @@ We note that seasonal cycle ups and downs are growing with time, so we may need 
 
 
 ```{r}
-co2.ts %>% gg_tsdisplay(plot_type = "partial", y = value)
+co2.ts %>% gg_tsdisplay(plot_type = "partial", y = value) + 
+  ggtitle("Trend with ACF & PACF")
 ```
 
 The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multples of 12 months. This indicates that the model could be AR model with 12 months seasonal cycles.
 
-No lets look at each component one by one starting with trend
+Now lets look at each component one by one starting with trend
 
 ```{r}
 co2.ts.components <- co2.ts %>% model(STL(value)) %>% components() 
 ggplot(data=co2.ts.components)+
   geom_line(aes(x=index, y=trend)) +
-  ggtitle("Trend")
+  ggtitle("Trend of co2 Time Series - ppm")
 ```
 There are minor bumps and dips but there is no major shock or sudden movement in trend.
 
@@ -155,46 +156,51 @@ Now lets look at residuals
 # Lets look at residuals
 
 #Before box-cox transformation
-co2.ts.components  %>% select("remainder") %>%
-  ggplot(aes(x=remainder)) +geom_histogram()
+plot.co2.ts.components <- co2.ts.components  %>% select("remainder") %>%
+  ggplot(aes(x=remainder)) +geom_histogram() + 
+  ggtitle("Residuals Prior to Box-Cox")
 
 #After box-cox transformation
-co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
-  ggplot(aes(x=remainder)) +geom_histogram()
+plot.co2.ts.trans.comp <- co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
+  ggplot(aes(x=remainder)) +geom_histogram() + 
+  ggtitle("Residuals Subsequent to Box-Cox")
 
-
+grid.arrange(plot.co2.ts.components, plot.co2.ts.trans.comp, nrow=2)
 ```
 Both before and after box-cox transformation residuals look fairly normally distributed
 
 ```{r}
 
-co2.ts.components %>% select("remainder") %>%
-  autoplot()
+plot.resid.co2.ts.components <- co2.ts.components %>% select("remainder") %>%
+  autoplot() + ggtitle("Residuals Prior to Box-Cox Transformation")
 
-co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
-  autoplot()
-  
+plot.resid.co2.ts.trans.comp <- co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
+  autoplot() + ggtitle("Residuals Subsequent to Box-Cox Transformation")
+
+grid.arrange(plot.resid.co2.ts.components, plot.resid.co2.ts.trans.comp, nrow=2)
 ```
 
 Residuals appear to be stationary and appear to be white noise with no trend or seasonal patterns. 
 
 ```{r}
 co2.ts.components %>% select("remainder") %>%
-  gg_tsdisplay(plot_type = "partial")
+  gg_tsdisplay(plot_type = "partial") + ggtitle("Residuals with ACF Prior to Box-Cox")
 
 co2.ts.trans.comp %>% components() %>% select("remainder") %>%
-  gg_tsdisplay(plot_type = "partial")
+  gg_tsdisplay(plot_type = "partial") + ggtitle("Residuals with ACF Post Box-Cox")
+
 ```
 
 **Part 2 (3 points)**
 
 Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals. Compare this to a quadratic time trend model. Discuss whether a logarithmic transformation of the data would be appropriate. Fit a suitable polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020. 
 
-Lets first fir a linear time trend model
+Lets first fit a linear time trend model
 
 ```{r}
 time.index <- 1:length(co2.ts$index)
 mod.ln.1 <- lm(formula = value ~ time.index, data=co2.ts)
+par(mfrow=c(2,2))
 summary(mod.ln.1)
 plot(mod.ln.1)
 
@@ -205,6 +211,7 @@ The residuals show a pattern indicating linear model is not able to capture the 
 ```{r}
 mod.ln.2 <- lm(formula = value ~ time.index + I(time.index^2), data=co2.ts)
 summary(mod.ln.2)
+par(mfrow=c(2,2))
 plot(mod.ln.2)
 
 ```
@@ -214,6 +221,7 @@ The residuals are showing a much better fit. Now lets try cubic term and see if 
 ```{r}
 mod.ln.3 <- lm(formula = value ~ time.index + I(time.index^2) + I(time.index^3), data=co2.ts)
 summary(mod.ln.3)
+par(mfrow=c(2,2))
 plot(mod.ln.3)
 
 ```
@@ -223,6 +231,7 @@ This model is even better fit, but Q-Q plot shows deviation at start and end. So
 ```{r}
 mod.ln.4 <- lm(formula = log(value) ~ time.index + I(time.index^2)+ I(time.index^3), data=co2.ts)
 summary(mod.ln.4)
+par(mfrow=c(2,2))
 plot(mod.ln.4)
 
 ```
@@ -234,6 +243,7 @@ So finally lets choose the best of the models, which so far is cubic model,  and
 ```{r}
 co2.df <- data.frame(value=co2.ts$value, time.index=time.index, season=factor(time.index%%12, ordered = F))
 mod.ln.5 <- lm(formula = value ~ 0 + time.index + I(time.index^2)  + I(time.index^3) + season, data=co2.df)
+par(mfrow=c(2,2))
 summary(mod.ln.5)
 plot(mod.ln.5)
 
@@ -321,7 +331,7 @@ co2.2020.arima.pred.ts %>%
 Below, we inscribe the model using Latex and Backshift notation.
 
 $$
-  x_{t}(1-B) - \alpha B^{12}x_{t}(1-B) = Bw_{t}(1-\beta B^{12})
+  x_{t}(1-B) - \alpha B^{24}x_{t}(1-B) = Bw_{t}
 $$
 
 
@@ -338,6 +348,7 @@ colnames(co2.noaa.weekly.df) <- c('year','month','day','decimal.day', 'record.va
 head(co2.noaa.weekly.df)
 tail(co2.noaa.weekly.df)
 ```
+
 ```{r}
 summary(co2.noaa.weekly.df) # 20 readings are missing
 describe(co2.noaa.weekly.df)
@@ -454,6 +465,7 @@ We see that up until about the year 2000, both models model the actual data clos
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
 First lets try couple of ways in which we can decompose seasonality by analysing residual
+
 ```{r}
 plotRemainderFromSTL <- function(s.degree=0){
   stl.val <- co2.noaa.weekly.ts %>%
@@ -479,7 +491,9 @@ co2.noaa.weekly.ts %>%
   stl(s.window = week.frequency, s.degree = 1) %>%
   autoplot()
 ```
+
 Now lets substract seasonal data from time series to get seasonally adjusted time series
+
 ```{r}
 co2.noaa.weekly.ts.components <- stl(co2.noaa.weekly.ts ,s.window = week.frequency)$time.series
 co2.noaa.weekly.ts.components.seasonal <- co2.noaa.weekly.ts.components[,'seasonal']
@@ -497,7 +511,8 @@ co2.noaa.weekly.ts.SA %>%  gg_tsdisplay(plot_type = "partial")
 ```
 We can see a smoother trend line with the seasonally adjusted series. The acf chart shows a very slow decreasing lag for every  30+ lags. The pacf chart suggests a non-stationary random walk process. 
 
-Now we split the seasonally adjusted and non-seasonally adjusted time series into training and test sets. With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
+Now we split the seasonally adjusted and non-seasonally adjusted time series into training and test sets. With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set.
+
 ```{r}
 trainTestSplit <- function(time.series){
   time.series.test <- time.series %>%
@@ -726,6 +741,12 @@ The polynomial model follows the seasonally adjusted out sample data at the high
 **Part 6 (3 points)**
 
 Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric C02 levels in the year 2100. How confident are you that these are accurate predictions?
+
+```{r}
+part.6 <- predict(model.arima.best.NSA, h=500)
+part.6$pred
+```
+
 
 
 Lets first plot forecast for 5500 future intervals which would cover 420 and 500 ppm levels for irst and final times for 95% conf interval
