@@ -1,0 +1,477 @@
+---
+title: 'Statistical Methods for Discrete Response, Time Series, and Panel Data (W271): Lab 2'
+geometry: margin=1in
+output:
+  pdf_document:
+    latex_engine: xelatex
+  number_sections: yes
+  html_document: default
+  toc: yes
+fontsize: 11pt
+---
+
+## Instructions (Please Read Carefully):
+
+* $\textbf{Due Date: Sunday March 15 2020, 11:59pm}$
+
+* No page limit, but be reasonable
+
+* Do not modify fontsize, margin or line-spacing settings
+
+* One student from each group should submit the lab to their student github repository by the deadline; submission and revisions made after the deadline will not be graded
+
+* Answers should clearly explain your reasoning; do not simply 'output dump' the results of code without explanation 
+
+* Submit two files:
+    
+    1. A pdf file that details your answers. Include all R code used to produce the answers. Do not suppress the codes in your pdf file
+    
+    2. The R markdown (Rmd) file used to produce the pdf file
+  
+    The assignment will not be graded unless **both** files are submitted
+      
+* Name your files to include all group members names. For example the students' names are Stan Cartman and Kenny Kyle, name your files as follows:
+
+    * `StanCartman_KennyKyle_Lab2.Rmd`
+    * `StanCartman_KennyKyle_Lab2.pdf`
+            
+* Although it sounds obvious, please write your name on page 1 of your pdf and Rmd files
+
+* All answers should include a detailed narrative; make sure that your audience can easily follow the logic of your analysis. All steps used in modelling must be clearly shown and explained
+
+* If you use libraries and functions for statistical modeling that we have not covered in this course, you must provide an explanation of why such libraries and functions are used and reference the library documentation
+
+* For mathematical formulae, type them in your R markdown file. Do not e.g. write them on a piece of paper, snap a photo, and use the image file
+
+* Incorrectly following submission instructions results in deduction of grades
+
+* Students are expected to act with regard to UC Berkeley Academic Integrity.
+
+\newpage
+
+# The Keeling Curve
+
+In the 1950s, the geochemist Charles David Keeling observed a seasonal pattern in the amount of carbon dioxide present in air samples collected over the course of several years. He was able to attribute this pattern to the difference in the amount of land area and vegetation cover between the northern and southern hemipsheres, and the resulting variation in global rates of photosynthesis as the hemispheres' seasons alternated throughout the year. 
+
+In 1958 Keeling began continuous monitoring of atmospheric carbon dioxide concentrations from the Mauna Loa Observatory in Hawaii and soon observed a trend increase carbon dioxide levels in addition to the seasonal cycle. He was able to attribute this trend increase to growth in global rates of fossil fuel combustion. This trend has continued to the present.
+
+The `co2` data set in R's `datasets` package (automatically loaded with base R) is a monthly time series of atmospheric carbon dioxide concentrations measured in ppm (parts per million) at the Mauna Loa Observatory from 1959 to 1997. The curve graphed by this data is known as the 'Keeling Curve'.
+
+```{r warning=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+# Start with a clean R environment
+rm(list = ls())
+# Set Fixed random seed to replicate the results
+set.seed(28740)
+# load libraries
+library(Hmisc)
+library(dplyr)
+library(astsa)
+library(Hmisc)
+library(fable)
+library(fpp3)
+library(svMisc)
+library(imputeTS)
+library(stats)
+# plot time series for initial look
+plot(co2, ylab = expression("CO2 ppm"), col = 'blue', las = 1)
+title(main = "Monthly Mean CO2 Variation")
+```
+
+\newpage
+
+**Part 1 (4 points)**
+
+Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This should include thorough analyses of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed.
+
+```{r}
+# initial look at data
+head(co2)
+tail(co2)
+str(co2)
+summary(co2)
+hist(co2)
+```
+
+We start by noting that there are no missing values, and that the series does not appear to be mean stationary, but rather, has a rising trend over time. Histogram of parts per million of co2 appears to be left-skewed rather than normal.
+After an initial look at the data, we examine some aspects of the time series below.
+
+```{r}
+# sending the data to a tsibble object and examining head and tail
+co2.ts <- as_tsibble(ts(co2, start=c(1959,1), frequency=12))
+# plotting the series / ACF / PACF
+co2.ts %>% gg_tsdisplay(plot_type="partial") + 
+ggtitle(paste("Time Series with ACF & PACF Charts"))
+```
+
+After converting the time series to a tsibble object, we see the concentration of parts per million steadily rising over time, confirming what we saw earlier. 
+The ACF plot indicates a high degree of autocorrelation, as even after 24 lags, the series displays statistically significant autocorrelation. The PACF plot indicates that after lag 2, the 'memory' of the series starts to trail off, perhaps indicating an AR(2) model would be appropriate.  It should be noted however, that lags 12 and 13 also display statistical significance, perhaps indicating yearly seasonality, along with first differencing being appropriate.
+To further investigate the trend and seasonality, we decompose the data into its component parts below.
+
+```{r}
+# decomposing the series into trend, seasonality, and remainder
+co2.ts %>% model(STL(value)) %>% components() %>% autoplot()
+```
+
+This chart breaks the time series down into its component parts, with an upward trend clearly visible, as well as a regular seasonal trend, perhaps corroborating what was seen on the PACF chart. The seasonal trend also appears to be increasing in variance, which we will address below.
+We now examine each of the component parts individually for higher clarity.
+
+```{r}
+# closer look at the trend component
+co2.ts.components <- co2.ts %>% model(STL(value)) %>% components() 
+ggplot(data=co2.ts.components)+
+  geom_line(aes(x=index, y=trend)) +
+  ggtitle("Trend")
+```
+
+Taking a closer look at the trend component of the data, we notice that there are no major shocks in the overall upward trajectory.
+
+```{r}
+# closer look at the seasonal component
+co2.ts %>%
+  gg_season(y=value, period = "year")+
+  ylab("CO2 emission")+
+    ggtitle("Seasonal plot : Monthly CO2 emission")
+```
+
+This chart takes a closer look at the seasonality of the data over time, clearly showing that parts per million is greatest every year around May and June, while it is lowest around September and October. Possible causes of this include weather patterns, vegetation, and energy usage. Hemispheric differences should also be taken into consideration, as the Northern and Southern hemisphers experience winter at opposite times of the year.
+
+```{r}
+# decomposition of ppm levels by month
+co2.ts %>%
+  gg_subseries(y=value, period = "year")+
+  geom_hline(aes(yintercept=mean(co2.ts$value), colour="red"))+
+  ylab("CO2 emission")+
+  xlab("Years")+
+  ggtitle("Seasonal subseries plot : Monthly CO2 emission")
+```
+
+Decomposing the parts per million levels by month, we see that the overall average of parts per million is at approximately 337. For a month like May, the average is at nearly 340, while in a month like October, the average is at approximately 334.
+To address the increasing variance in seasonality that we noted earlier, we apply a Box-Cox transformation (below).
+
+```{r}
+lambda <- co2.ts %>%
+  features(value, features=guerrero) %>%
+  pull(lambda_guerrero)
+co2.ts.trans.comp <- co2.ts %>% model(STL(box_cox(value, lambda))) 
+
+co2.ts.trans.comp %>% components() %>% autoplot() +
+  ggtitle(paste("Box-Cox Tranformed Decompositions for lambda=",round(lambda,3)))
+```
+
+Having examined the decomposition of the trend and seasonality, we turn our attention to the one remaining component; the residuals.
+
+```{r}
+# closer look at the residuals
+co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
+  ggplot(aes(x=remainder)) + geom_histogram()
+co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
+  autoplot()
+co2.ts.trans.comp %>% components() %>% select("remainder") %>%
+  gg_tsdisplay()
+```
+
+The first chart is a histogram that shows the residuals to be approximately normally distributed. The autocorrelation chart, however, shows evidence of seasonality, indicating 
+
+**Part 2 (3 points)**
+
+Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals. Compare this to a quadratic time trend model. Discuss whether a logarithmic transformation of the data would be appropriate. Fit a suitable polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+#Convert to tsibble and create time index
+co2.tsibble <- as_tsibble(co2.ts) %>% mutate(time_index = row_number())
+
+#Create linear model
+linear.mod = lm(value ~ time_index, data=co2.tsibble)
+par(mfrow=c(2,2))
+summary(linear.mod)
+plot(linear.mod)
+```
+
+The residuals versus fitted plot shows that the linear model is not a good fit, with major deviances at high and low values.
+
+```{r}
+#Create quadratic model
+quadratic.mod = lm(value ~ time_index + I(time_index^2), data=co2.tsibble)
+par(mfrow=c(2,2))
+summary(quadratic.mod)
+plot(quadratic.mod)
+```
+
+The residuals versus fitted plot shows a much better fit, indicating that there are non-linear elements to the time series. To further examine this finding, we examine both cubic and logarithmic transformations below.
+
+```{r}
+#Create cubic model
+cubic.mod = lm(value ~ time_index + I(time_index^2) + I(time_index^3), data=co2.tsibble)
+par(mfrow=c(2,2))
+summary(cubic.mod)
+plot(cubic.mod)
+```
+
+The cubic fit appears to be the best model so far, looking at the residuals versus fitted plot, but the Normal Q-Q plot reveals significant deviations from normality at extremes.
+
+```{r}
+#Create logarithmic transformation
+log.mod = lm(log(value) ~ time_index + I(time_index^2) + I(time_index^3), data=co2.tsibble)
+par(mfrow=c(2,2))
+summary(log.mod)
+plot(log.mod)
+```
+
+The logarithmic transformation does not appear to be additive relative to the cubic transformation, in terms of the model diagnostics, so we do not employ it further.
+
+```{r}
+# create a seasonal factor in a dataframe
+time.index <- 1:length(co2.ts$index)
+co2.df <- data.frame(value=co2.ts$value, time_index=time.index, season=factor(time.index%%12, ordered = F))
+# create a model using the seasonal factor
+seasonal.mod = lm(value ~ 0 + time_index + I(time_index^2) + I(time_index^3) + season, data=co2.df)
+par(mfrow=c(2,2))
+summary(seasonal.mod)
+plot(seasonal.mod)
+```
+
+The normal Q-Q plot and R-squared show the closest fit among all the models tested thus far, and so we use this model for forecasting purposes.
+
+```{r}
+# creating an index for the range of future predictions
+time.index.2020 = seq(from=(2020-1959)*12+1,length.out=12)
+co2.2020.df <- data.frame(time_index= time.index.2020, season=factor(time.index.2020%%12, ordered = F))
+# using the seasonal model to predict for 2020 and plotting
+co2.2020.pred <- predict(object = seasonal.mod, newdata = co2.2020.df)
+co2.2020.pred.ts <- as_tsibble(ts(data=co2.2020.pred, start = c(2020,1), frequency=12))
+co2.2020.pred.ts %>%
+  autoplot(.vars = value)
+```
+
+The cubic model with seasonal term forecasts that CO2 ppm will be ~385 by 2020.
+
+**Part 3 (3 points)**
+
+Following all appropriate steps, choose an ARIMA model to fit to the series. Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. Write your model (or models) using backshift notation. Use your model (or models) to generate forecasts to the year 2020. 
+
+Step 1: Conduct EDA to determine if a transformation is necessary to make stationary
+- This step has already been done and a transformation will be necessary since the data clearly has a trend upward
+
+Step 2: Transform the series if needed
+- This step will be carried out below through differencing when we select a model. The appropriate order for d and D will both be selected using performance-based criteria when fitting models.
+
+Step 3: Estimate several `ARIMA(p,d,q)x(P,D,Q)s` models, with starting values coming from the examination of time series plot, ACF, and PACF.
+- The PACF plot from our EDA indicated yearly seasonality, while the ACF plot indicated a persistence in the time series, so it is likely that both terms will be utilized, and a SARIMA model will be more appropriate than a simple ARIMA model. Below, we demonstrate just how many combinations this entails for even lower orders on the 6 terms.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+no.p=no.P=2
+no.q=no.Q=2
+no.d=no.D=1
+no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
+print(paste("Number of models to fit =",no.of.models))
+```
+
+```{r}
+# creating a function that returns model order and evaluation metrics for each attempted fitting
+params.df <- expand.grid(p=0:no.p, d=0:no.d, q=0:no.q, P=0:no.P, D=0:no.D, Q=0:no.Q)
+i <- 1
+funFitModel <- function(param.row){
+  progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
+  i <- i+1
+  p = param.row['p']
+  q = param.row['q']
+  d = param.row['d']
+  P = param.row['P']
+  Q = param.row['Q']
+  D = param.row['D']
+  
+  #print(paste(p,q,d,P,Q,D))
+  tryCatch({
+  model.fit = Arima(y=as.ts(co2.tsibble), order=c(p,d,q), seasonal=c(P,D,Q), lambda=lambda, include.drift = FALSE);
+  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+  return (model.info);
+  }, error=function(e){
+    return (data.frame())
+  })
+  
+}
+```
+
+
+```{r}
+# calling the model
+model.fit.info.df <- do.call("rbind",(apply(params.df, 1,funFitModel )))
+model.fit.info.df
+```
+
+```{r}
+colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+print("Top 6 models by BIC")
+model.fit.info.df %>%
+  arrange(bic) %>%
+  head()
+```
+
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+get.best.arima <- function(x.ts, maxord = c(1,1,1,1,1,1))
+{
+  best.bic <-1000000
+  n <- length(x.ts)
+  for (p in 0:maxord[1]) for(d in 0:maxord[2]) for(q in 0:maxord[3])
+      for (P in 0:maxord[4]) for(D in 0:maxord[5]) for(Q in 0:maxord[6])
+      {
+        fit <- arima(x.ts, order = c(p,d,q),
+                     seas = list(order = c(P,D,Q),
+                                 frequency(x.ts)), method = "CSS")
+        fit.bic <- (length(fit$coef)*log(n))-(2*fit$loglik)
+        if (fit.bic < best.bic)
+        {
+          best.bic <- fit.bic
+          best.fit <- fit
+          best.model <- c(p,d,q,P,D,Q)
+        }
+      }
+    list(best.bic, best.fit, best.model)
+}
+
+best.arima <- get.best.arima(co2, maxord = c(2,2,2,2,2,2))
+best.arima
+```
+
+```{r}
+library("forecast")
+futurVal <- forecast(arima(co2, order = c(0,1,1),
+                     seas = list(order = c(1,1,2),
+                                 frequency(co2)), method = "CSS"),h=10, level=c(99.5))
+
+co2 %>%
+  Arima(order=c(0,1,1), seasonal=c(1,1,2), method = "CSS", lambda=0) %>%
+  forecast(h = 264) %>%
+  autoplot() +
+    ylab("co2") + xlab("Year") + ggtitle("co2 Forecasts for ARIMA(0,1,1)(1,1,2)[12]")
+```
+
+Our best-fitting ARIMA model, based on BIC, forecasts that in the year 2020, ppm will be ~400ppm, with confidence bands stretching from ~380 on the low end to ~415 on the high end. This is higher than the linear model with seasonality we fit in part 2, which forecasted ppm ~380. 
+
+Below, we inscribe the model using Latex and Backshift notation.
+
+$$
+  x_{t}(1-B) - \alpha B^{12}x_{t}(1-B) = Bw_{t}(1-\beta B^{12})
+$$
+```{r}
+best.arima.q3 <- forecast(arima(co2, order = c(0,1,1),
+                     seas = list(order = c(1,1,2),
+                                 frequency(co2))))
+
+co2.2020.arima.pred.ts <- forecast(arima(co2, order = c(0,1,1),
+                     seas = list(order = c(1,1,2),
+                                 frequency(co2)), method = "CSS"),h=264)
+```
+
+
+**Part 4 (4 points)**
+
+The file `co2_weekly_mlo.txt` contains weekly observations of atmospheric carbon dioxide concentrations measured at the Mauna Loa Observatory from 1974 to 2020, published by the National Oceanic and Atmospheric Administration (NOAA). Convert these data into a suitable time series object, conduct a thorough EDA on the data, and address the problem of missing observations. Describe how the Keeling Curve evolved from 1997 to the present and compare current atmospheric CO2 levels to those predicted by your forecasts in Parts 2 and 3. Use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2 and 3 over the entire period.
+
+```{r}
+# reading in the weekly data and looking at top and bottom of dataframes
+setwd('/Users/jamesdarmody/Documents/GroupLab2w217/MIDS-W271-Sprint2020-Lab2')
+co2.noaa.weekly.df <- read.table('co2_weekly_mlo.txt', header = FALSE, comment.char='#', na.strings = '-999.99')
+colnames(co2.noaa.weekly.df) <- c('year','month','day','decimal.day', 'record.value', '#days', 'one.year.ago','ten.years.ago','since.1800.diff')
+head(co2.noaa.weekly.df)
+tail(co2.noaa.weekly.df)
+```
+
+```{r}
+# we conduct further EDA and examine summary statistics
+summary(co2.noaa.weekly.df)
+describe(co2.noaa.weekly.df)
+co2.noaa.weekly.df <- co2.noaa.weekly.df %>%
+  mutate(record.date=ymd(paste(year,month,day)))
+```
+
+We notice that in the weekly ppm time series, there are 20 values missing. We will address these using interpolation below.
+
+```{r}
+# sending the weekly time series to a tsibble matrix and looking at key statistics
+co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.380	, frequency = 365/7), class="matrix")
+head(co2.noaa.weekly.ts)
+tail(co2.noaa.weekly.ts)
+summary(co2.noaa.weekly.ts)
+```
+
+```{r}
+# we interpolate missing values using a spline
+co2.noaa.weekly.ts%>%
+  filter(is.na(value))
+co2.noaa.weekly.ts <- na_interpolation(co2.noaa.weekly.ts, option = "spline")
+```
+
+Having interpolated missing values, we now plot the Keeling curve to examine how it has evolved since we looked at it with EDA in question 1. 
+
+```{r}
+co2.noaa.weekly.ts %>%
+  autoplot(.vars = value) +
+  geom_smooth() +
+  labs(title = "Keeling Curve till 2020", y="Co2 emission (units)", x="Year")
+```
+
+We notice that there appears the be an acceleration to the upward trend, starting at some point in the mid 1990s. Therefore, a reasonable hypothesis might be that the predictions from earlier would undershoot ppm today (which appears to be the case).
+
+```{r}
+co2.noaa.weekly.ts %>%
+  filter_index("2019-12-31" ~.) %>%
+  mutate(index = as.Date(index)) %>%
+  autoplot(.vars = value, color="blue") +
+  autolayer(co2.2020.pred.ts, .vars = value, color="red") +
+  autolayer(co2.2020.arima.pred.ts, .vars = value, color="navy") +
+  labs(title="Year 2020 Actual vs Prediction from Linear Model and ARIMA model")
+```
+
+
+```{r}
+# converting the time series to monthly
+co2.noaa.monthly.ts <- co2.noaa.weekly.ts %>%
+  as_tibble() %>%
+  mutate(yearmonth=yearmonth(yearweek(index))) %>%
+  group_by(yearmonth) %>%
+  summarise(avg_value=mean(value)) %>%
+  as_tsibble(index = yearmonth, value=avg_value) 
+summary(co2.noaa.monthly.ts)
+```
+
+```{r}
+# Now predict using linear model for same time frame
+time.index.1974.may = seq(from=(1974-1959)*12+5,length.out=550)
+co2.noaa.like.df <- data.frame(time_index= time.index.1974.may, season=factor(time.index.1974.may%%12, ordered = F))
+co2.noaa.like.pred <- predict(object = seasonal.mod, newdata = co2.noaa.like.df)
+co2.noaa.like.pred.ts <- as_tsibble(ts(data=co2.noaa.like.pred, start = c(1974,5), frequency=12))
+```
+
+```{r}
+# now predict using Arima model selected in Q3
+co2.noaa.arima.pred.ts <- forecast(best.arima.q3, h=276) %>%
+  as_tibble() %>%
+  dplyr::select('Point Forecast') %>%
+  ts(start = c(1998,1), frequency = 12) %>%
+  as_tsibble() 
+model.arima.best.q3.fitted.ts <-best.arima.q3$fitted %>%
+  as_tsibble()
+```
+
+
+**Part 5 (3 points)**
+
+Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+
+**Part 6 (3 points)**
+
+Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric C02 levels in the year 2100. How confident are you that these are accurate predictions?
+
+
+
+
+
+
+
+
+
+
