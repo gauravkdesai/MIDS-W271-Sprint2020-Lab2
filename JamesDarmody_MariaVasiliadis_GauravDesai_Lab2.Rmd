@@ -21,17 +21,9 @@ rm(list = ls())
 # Set Fixed random seed to replicate the results
 set.seed(28740)
 
-#library(ggplot2)
 library(Hmisc)
-#library(car)
 library(gridExtra)
 library(dplyr)
-#library(scales)
-#library(GGally)
-#library(MASS)
-#library(purrr)
-#library(tidyr)
-#library(nnet)
 library(purrr)
 library(imputeTS)
 library(tsibble)
@@ -271,8 +263,8 @@ Following all appropriate steps, choose an ARIMA model to fit to the series. Dis
 
 ```{r}
 no.p=no.P=2
-no.q=no.Q=2
 no.d=no.D=1
+no.q=no.Q=2
 no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
 
 print(paste("Number of models to fit =",no.of.models))
@@ -284,16 +276,16 @@ funFitModel <- function(param.row){
   progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
   i <- i+1
   p = param.row['p']
-  q = param.row['q']
   d = param.row['d']
+  q = param.row['q']
   P = param.row['P']
-  Q = param.row['Q']
   D = param.row['D']
+  Q = param.row['Q']
   
   #print(paste(p,q,d,P,Q,D))
   tryCatch({
   model.fit = Arima(y=as.ts(co2.ts), order=c(p,d,q), seasonal=c(P,D,Q), lambda=lambda, include.drift = FALSE);
-  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+  model.info = data.frame(p,d,q,P,D,Q, model.fit$aic, model.fit$aicc, model.fit$bic);
 
   return (model.info);
   }, error=function(e){
@@ -303,7 +295,7 @@ funFitModel <- function(param.row){
 }
 
 model.fit.info.df <- do.call("rbind",(apply(params.df, 1,funFitModel )))
-colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+colnames(model.fit.info.df) <- c("p","d", "q", "P", "D", "Q", "aic", "aicc", "bic")
 print("Top 6 models by BIC")
 model.fit.info.df %>%
   arrange(bic) %>%
@@ -827,8 +819,8 @@ Hi80.420.last <- findForecastLast(model.arima.best.NSA.predict.tbl$Hi80.420)
 PF.500.first <- findForecastFirst(model.arima.best.NSA.predict.tbl$PF.500)
 PF.500.last <- findForecastLast(model.arima.best.NSA.predict.tbl$PF.500)
 
-Lo95.500.first <- NULL#findForecast(head, model.arima.best.NSA.predict.tbl$Lo95.500)
-Lo95.500.last <- NULL#findForecast(tail, model.arima.best.NSA.predict.tbl$Lo95.500)
+Lo95.500.first <- NULL # 95% CI low curve doesn't hit 500 ppm
+Lo95.500.last <- NULL # 95% CI low curve doesn't hit 500 ppm
 
 Hi95.500.first <- findForecastFirst(model.arima.best.NSA.predict.tbl$Hi95.500)
 Hi95.500.last <- findForecastLast(model.arima.best.NSA.predict.tbl$Hi95.500)
