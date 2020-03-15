@@ -24,7 +24,7 @@ set.seed(28740)
 #library(ggplot2)
 library(Hmisc)
 #library(car)
-#library(gridExtra)
+library(gridExtra)
 library(dplyr)
 #library(scales)
 #library(GGally)
@@ -453,11 +453,30 @@ We see that up until about the year 2000, both models model the actual data clos
 
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
+First lets try couple of ways in which we can decompose seasonality by analysing residual
+```{r}
+plotRemainderFromSTL <- function(s.degree=0){
+  stl.val <- co2.noaa.weekly.ts %>%
+    stl(s.window = week.frequency, s.degree = s.degree)
+  ts.obj <- as_tsibble(ts(stl.val$time.series[,'remainder'],start = 1974.3795	, frequency = week.frequency)) 
+  
+  par(mfrow=c(1,2))
+  #p1 <- ts.obj %>% autoplot(.vars = value)
+  ts.obj %>% gg_tsdisplay(y = value,plot_type = "partial")
+
+}
+
+
+plotRemainderFromSTL(s.degree=0)
+plotRemainderFromSTL(s.degree=1)
+```
+
+We can see that with degree of locality 1 in seasonal extraction gives is much better residuals with dampening ACF and sharp decrease in PACF at lag 1. There is still some seasonality left but still this looks much better than degree 0.
 
 Lets first see how seasonal decomposition looks
 ```{r}
 co2.noaa.weekly.ts %>%
-  stl(s.window = week.frequency) %>%
+  stl(s.window = week.frequency, s.degree = 1) %>%
   autoplot()
 ```
 Now lets substract seasonal data from time series to get seasonally adjusted time series
@@ -468,6 +487,7 @@ co2.noaa.weekly.ts.SA <- as_tsibble(ts(co2.noaa.weekly.ts$value - co2.noaa.weekl
 cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts),head(co2.noaa.weekly.ts.SA),tail(co2.noaa.weekly.ts.SA))
 ```
 
+
 Lets check the SA time series
 ```{r}
 co2.noaa.weekly.ts.SA %>%
@@ -475,27 +495,46 @@ co2.noaa.weekly.ts.SA %>%
 
 co2.noaa.weekly.ts.SA %>%  gg_tsdisplay(plot_type = "partial")
 ```
-We can see a smoother line with the seasonally adjusted series. The acf chart shows a non-decreasing lag for every value. The pacf chart would suggest a non-stationary random walk process. 
+We can see a smoother trend line with the seasonally adjusted series. The acf chart shows a very slow decreasing lag for every  30+ lags. The pacf chart suggests a non-stationary random walk process. 
 
 Now we split the seasonally adjusted and non-seasonally adjusted time series into training and test sets. With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
 ```{r}
+trainTestSplit <- function(time.series){
+  time.series.test <- time.series %>%
+  filter_index("2018-01-01" ~.) 
+  
+  time.series.train <- time.series %>%
+  filter_index(.~"2017-12-31")
+  
+  return (list(train=time.series.train,test=time.series.test))
+}
+
 #Split SA data into training and test
-co2.noaa.weekly.ts.SA.test <- tail(co2.noaa.weekly.ts, 104)
-co2.noaa.weekly.ts.SA.training <- head(co2.noaa.weekly.ts, 2284)
+
+co2.noaa.weekly.ts.SA.train.test <- trainTestSplit(co2.noaa.weekly.ts.SA)
+co2.noaa.weekly.ts.SA.test <- co2.noaa.weekly.ts.SA.train.test$test
+co2.noaa.weekly.ts.SA.training <- co2.noaa.weekly.ts.SA.train.test$train
 
 #Split NSA data into training and test
-co2.noaa.weekly.ts.test <- tail(co2.noaa.weekly.ts, 104)
-co2.noaa.weekly.ts.training <- head(co2.noaa.weekly.ts, 2284)
+co2.noaa.weekly.ts.train.test <- trainTestSplit(co2.noaa.weekly.ts)
+co2.noaa.weekly.ts.test <- co2.noaa.weekly.ts.train.test$test
+co2.noaa.weekly.ts.training <- co2.noaa.weekly.ts.train.test$train
 ```
 
+Now lets fit Arima model for SA and non SA time serieses.
+
+
+First lets start with SA time sries
 ```{r}
-#Fit ARIMA model for NA data
-no.p=2
-no.P=0
-no.q=2
-no.Q=0
-no.d=1
-no.D=0
+#Fit ARIMA model for SA data
+no.p=3
+no.d=2
+no.q=3
+
+# P,D, Q are set to 0 because training data is already seasonally adjusted
+no.P=0 
+no.D=0 
+no.Q=0 
 
 no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
 
@@ -508,16 +547,16 @@ funFitModel <- function(param.row){
   progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
   i <- i+1
   p = param.row['p']
-  q = param.row['q']
   d = param.row['d']
+  q = param.row['q']
   P = param.row['P']
-  Q = param.row['Q']
   D = param.row['D']
+  Q = param.row['Q']
   
-  #print(paste(p,q,d,P,Q,D))
+  #print(paste(p,d,q,P,D,Q))
   tryCatch({
-  model.fit = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(p,d,q), seasonal=c(P,D,Q), include.drift = FALSE);
-  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+  model.fit = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(p,d,q), seasonal=c(0,0,0), include.drift = FALSE);
+  model.info = data.frame(p,d,q,P,D,Q, model.fit$aic, model.fit$aicc, model.fit$bic);
 
   return (model.info);
   }, error=function(e){
@@ -527,17 +566,24 @@ funFitModel <- function(param.row){
 }
 
 model.fit.info.df.SA <- do.call("rbind",(apply(params.df, 1,funFitModel )))
-colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+colnames(model.fit.info.df.SA) <- c("p","d", "q", "P", "D", "Q", "aic", "aicc", "bic")
+```
+```{r}
 print("Top 6 models by BIC")
 model.fit.info.df.SA %>%
-  arrange(model.fit.bic) %>%
+  arrange(bic) %>%
   head()
-
-model.arima.best.SA = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(2,2,1), seasonal=c(0,0,0), include.drift = FALSE);
-
-
 ```
 
+Arima(0,2,3) is in top 3 models by all 3 measres AIC, AICc and BIC. We pick this model as best model as this has least number of parameters compared to other top models.
+
+```{r}
+model.arima.best.SA = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(0,2,3), seasonal=c(0,0,0), include.drift = FALSE);
+summary(model.arima.best.SA)
+checkresiduals(model.arima.best.SA)
+```
+
+Now lets fit Arima model to non SA time series.
 
 ```{r}
 #Fit ARIMA model for NSA data
@@ -555,16 +601,16 @@ funFitModel <- function(param.row){
   progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
   i <- i+1
   p = param.row['p']
-  q = param.row['q']
   d = param.row['d']
+  q = param.row['q']
   P = param.row['P']
-  Q = param.row['Q']
   D = param.row['D']
+  Q = param.row['Q']
   
   #print(paste(p,q,d,P,Q,D))
   tryCatch({
   model.fit = Arima(y=as.ts(co2.noaa.weekly.ts.training), order=c(p,d,q), seasonal=c(P,D,Q),include.drift = FALSE);
-  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+  model.info = data.frame(p,d,q,P,D,Q, model.fit$aic, model.fit$aicc, model.fit$bic);
 
   return (model.info);
   }, error=function(e){
@@ -573,13 +619,82 @@ funFitModel <- function(param.row){
   
 }
 
-model.fit.info.df <- do.call("rbind",(apply(params.df, 1,funFitModel )))
-colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+model.fit.info.df.NSA <- do.call("rbind",(apply(params.df, 1,funFitModel )))
+colnames(model.fit.info.df.NSA) <- c("p","d", "q", "P", "D", "Q", "aic", "aicc", "bic")
+```
+```{r}
 print("Top 6 models by BIC")
-model.fit.info.df %>%
+model.fit.info.df.NSA %>%
   arrange(bic) %>%
   head()
 ```
+
+Best model for NSA time sries is Arima(1,1,1)(0,1,1). We selected this model because has lowest AIC, AICc and BIC so this is natural selection.
+We can try with higher values of p,d and q if but it is going to take much longer to estimate the models as number of parameters quickly increase exponentially.
+
+```{r}
+model.arima.best.NSA = Arima(y=as.ts(co2.noaa.weekly.ts.training), order=c(1,1,1), seasonal=c(0,1,1), include.drift = FALSE);
+summary(model.arima.best.NSA)
+checkresiduals(model.arima.best.NSA)
+```
+
+Now lets compare how these selected model perform in-sample and pseudo out-of-sample data
+
+```{r}
+# in-sample
+in.sample.accuracy = data.frame(rbind(accuracy(model.arima.best.SA), accuracy(model.arima.best.NSA)), row.names = c("SA", "NSA"))
+in.sample.accuracy
+```
+If we look at the in-sample accuracy of our SA and NSA best models then SA model marginal does better than NSA but there is not much to choose.
+Lets look at actual vs fitted values in chart.
+
+```{r}
+co2.noaa.weekly.ts.SA.training %>%
+  autoplot(.vars = value, color="red") +
+  autolayer(as_tsibble(model.arima.best.SA$fitted), .vars = value, color="blue") +
+  labs(title = "SA In-Sample - Actual vs Fitted ")
+```
+
+```{r}
+co2.noaa.weekly.ts.training %>%
+  autoplot(.vars = value, color="red") +
+  autolayer(as_tsibble(model.arima.best.NSA$fitted), .vars = value, color="blue") +
+  labs(title = "NSA In-Sample - Actual vs Fitted ")
+```
+
+Now lets look at Out-sample accuracy
+
+For SA model
+```{r}
+
+#SA - 
+
+forecast(model.arima.best.SA, h=length(co2.noaa.weekly.ts.SA.test$index)+1 )$mean %>%
+  as_tsibble() %>%
+  autoplot(.vars = value, color="blue") +
+  autolayer(co2.noaa.weekly.ts.SA.test,.vars = value, color="red")+
+  labs(title = "SA : Actual vs Out-Sample Predicted")
+
+```
+Seasonally adjusted model predicts the point estimates as a linear model and predicts the pseudo out-saple as a trend line. This is expected as model is based on seasonally adjusted training dataset.
+
+
+For NSA model
+```{r}
+
+#SA - 
+
+forecast(model.arima.best.NSA, h=length(co2.noaa.weekly.ts.test$index)+1 )$mean %>%
+  as_tsibble() %>%
+  autoplot(.vars = value, color="blue") +
+  autolayer(co2.noaa.weekly.ts.test,.vars = value, color="red")+
+  labs(title = "NSA : Actual vs Out-Sample Predicted")
+
+
+```
+Non SA model follows the pseudo out-sample dataset much more closely than SA model. The predictions are smooth over weekly fluctuations but still follows the original time series curve quite closely.
+
+
 For our pplynomial model, we will use a cubic polynomial with dummy variables for each month since this is the polynomial model variation we previously had the most success with. 
 ```{r}
 #Fit cubic model with month dummy variable
