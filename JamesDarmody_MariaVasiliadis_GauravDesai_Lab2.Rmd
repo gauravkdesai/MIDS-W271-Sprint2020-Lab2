@@ -690,7 +690,6 @@ forecast(model.arima.best.NSA, h=length(co2.noaa.weekly.ts.test$index)+1 )$mean 
   autolayer(co2.noaa.weekly.ts.test,.vars = value, color="red")+
   labs(title = "NSA : Actual vs Out-Sample Predicted")
 
-
 ```
 Non SA model follows the pseudo out-sample dataset much more closely than SA model. The predictions are smooth over weekly fluctuations but still follows the original time series curve quite closely.
 
@@ -729,8 +728,127 @@ The polynomial model follows the seasonally adjusted out sample data better than
 Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric C02 levels in the year 2100. How confident are you that these are accurate predictions?
 
 
+Lets first plot forecast for 5500 future intervals which would cover 420 and 500 ppm levels for irst and final times for 95% conf interval
+```{r}
+forecast(model.arima.best.NSA, h=5500 ) %>%
+  autoplot() +
+  geom_hline(yintercept = 420, color="red")+
+  geom_hline(yintercept = 500, color="cyan")
+```
 
+```{r}
+# Get forcast for next 5500 weeks, suffucuent for lower 95% CI to pass 500 mark
+model.arima.best.NSA.predict.ft <- forecast(model.arima.best.NSA, h=5500 )
 
+# convert to ts object to find time points in future
+model.arima.best.NSA.predict.ts <- as_tsibble(ts(model.arima.best.NSA.predict.ft$mean, start = 2017.99905280457 , frequency = 52.18 ))
+
+# find all data point which cross 420 or 500 ppm values
+model.arima.best.NSA.predict.tbl <- model.arima.best.NSA.predict.ft %>%
+  as_tibble() %>%
+  mutate(PF.420=`Point Forecast` >= 420, 
+         Lo95.420=`Lo 95` >=420,
+         Hi95.420=`Hi 95` >=420,
+         Lo80.420=`Lo 80` >=420,
+         Hi80.420=`Hi 80` >=420,
+         PF.500=`Point Forecast` >= 500, 
+         Lo95.500=`Lo 95` >=500,
+         Hi95.500=`Hi 95` >=500,
+         Lo80.500=`Lo 80` >=500,
+         Hi80.500=`Hi 80` >=500
+         )
+
+findForecast <- function(func, val){
+  cnt <- model.arima.best.NSA.predict.tbl %>%
+  mutate(count=row_number(), first.val = val & !lag(val)) %>%
+  filter(first.val) %>%
+  func(1) %>%
+  select(count)
+  
+  idx <- model.arima.best.NSA.predict.ts%>%
+  select(index) %>%
+  filter(row_number()==cnt$count)
+  
+  idx$index
+  
+    
+}
+
+# 420
+PF.420.first <- findForecast(head, model.arima.best.NSA.predict.tbl$PF.420)
+PF.420.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$PF.420)
+
+Lo95.420.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Lo95.420)
+Lo95.420.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Lo95.420)
+
+Hi95.420.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Hi95.420)
+Hi95.420.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Hi95.420)
+
+Lo80.420.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Lo80.420)
+Lo80.420.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Lo80.420)
+
+Hi80.420.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Hi80.420)
+Hi80.420.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Hi80.420)
+
+#500
+PF.500.first <- findForecast(head, model.arima.best.NSA.predict.tbl$PF.500)
+PF.500.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$PF.500)
+
+Lo95.500.first <- NULL#findForecast(head, model.arima.best.NSA.predict.tbl$Lo95.500)
+Lo95.500.last <- NULL#findForecast(tail, model.arima.best.NSA.predict.tbl$Lo95.500)
+
+Hi95.500.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Hi95.500)
+Hi95.500.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Hi95.500)
+
+Lo80.500.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Lo80.500)
+Lo80.500.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Lo80.500)
+
+Hi80.500.first <- findForecast(head, model.arima.best.NSA.predict.tbl$Hi80.500)
+Hi80.500.last <- findForecast(tail, model.arima.best.NSA.predict.tbl$Hi80.500)
+
+predict.420=list(Lo95.420.first, 
+                 Lo95.420.last, 
+                 Lo80.420.first, 
+                 Lo80.420.last, 
+                 PF.420.first, 
+                 PF.420.last, 
+                 Hi80.420.first, 
+                 Hi80.420.last, 
+                 Hi95.420.first,
+                 Hi95.420.last)
+predict.500=list(Lo95.500.first, 
+                 Lo95.500.last, 
+                 Lo80.500.first, 
+                 Lo80.500.last, 
+                 PF.500.first, 
+                 PF.500.last, 
+                 Hi80.500.first, 
+                 Hi80.500.last, 
+                 Hi95.500.first,
+                 Hi95.500.last)
+col.names <- c("First time lower estimate with 95% CI","Last time lower estimate with 95% CI",
+               "First time lower estimate with 80% CI","Last time lower estimate with 80% CI",
+               "First time Point Estimate","Last time Point Estimate",
+               "First time higher estimate with 80% CI","Last time higher estimate with 80% CI",
+               "First time higher estimate with 95% CI","Last time higher estimate with 95% CI")
+results.df <- data.frame(predict.420)
+results.df[2,]=predict.500
+colnames(results.df) <- col.names
+rownames(results.df) <- c("Predictions for 420 ppm", "Predictions for 500 ppm")
+results.df.t <- t(results.df) 
+
+results.df.t[order(results.df.t[,1]),]
+```
+
+Also note that if we keep forcasting any further, the 95% CI forcast turns downwards and may touch 420ppm again, so above table would change if we take even wider forcast window.
+
+Noe lets generate prediction for year 2100
+```{r}
+model.arima.best.NSA
+co2.noaa.weekly.ts.training
+co2.noaa.weekly.ts.2100 = yearweek(seq(as.Date("2100-01-01"), as.Date("2100-12-31"), by = "1 week"))
+forecast(model.arima.best.NSA, xreg=co2.noaa.weekly.ts.2100 ) 
+```
 
 
 
