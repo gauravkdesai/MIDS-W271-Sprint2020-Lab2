@@ -580,16 +580,10 @@ model.fit.info.df %>%
   arrange(bic) %>%
   head()
 ```
-
+For our pplynomial model, we will use a cubic polynomial with dummy variables for each month since this is the polynomial model variation we previously had the most success with. 
 ```{r}
-#Fit quadratic model
+#Fit cubic model with month dummy variable
 
-
-
-#Fit cubic model
-co2.noaa.weekly.ts.SA.cubicmodel <- lm(formula = co2.noaa.weekly.ts.SA$value ~ time.index + I(time.index^2) + I(time.index^3), data=co2.noaa.weekly.ts.SA)
-
-co2.noaa.weekly.ts.SA
 ```
 
 
