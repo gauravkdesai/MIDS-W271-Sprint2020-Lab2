@@ -74,8 +74,7 @@ str(co2)
 summary(co2)
 hist(co2)
 ```
-
-There are no missing values. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
+The co2 dataset is comprised of 468 observations of data from 1959 to 1998 where each datapoint is one month's data. The co2 levels in the dataset range from between 313.2 to 366.8. The histogram shows us that the most common co2 levels are between 320 and 325, and generally the frequency of co2 values decreases as co2 goes up. There is a small spike of frequencies between co2 level 355 and 360. There are no missing values in the dataset. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
 
 ```{r}
 co2.ts <- as_tsibble(co2)
@@ -98,8 +97,7 @@ We note that seasonal cycle ups and downs are growing with time, so we may need 
 co2.ts %>% gg_tsdisplay(plot_type = "partial", y = value)
 ```
 
-The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multples of 12 months.
-This indicates that the model could be AR model with 12 months seasonal cycles.
+The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multples of 12 months. This indicates that the model could be AR model with 12 months seasonal cycles.
 
 No lets look at each component one by one starting with trend
 
@@ -178,10 +176,9 @@ co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
   
 ```
 
-Residuals appear to be white noise with no trend or seasonal patterns
+Residuals appear to be stationary and appear to be white noise with no trend or seasonal patterns. 
 
 ```{r}
-
 co2.ts.components %>% select("remainder") %>%
   gg_tsdisplay(plot_type = "partial")
 
@@ -212,7 +209,7 @@ plot(mod.ln.2)
 
 ```
 
-The residuals are showing much better fitment. Now lets try cubic term and see if we get any more improvements.
+The residuals are showing a much better fit. Now lets try cubic term and see if we get any more improvements.
 
 ```{r}
 mod.ln.3 <- lm(formula = value ~ time.index + I(time.index^2) + I(time.index^3), data=co2.ts)
@@ -232,8 +229,7 @@ plot(mod.ln.4)
 
 Taking log doesn't improve much.
 
-
-So finally lets choose the best of the models so far which is cubic model and add seasonal dummy variables for Jan to December
+So finally lets choose the best of the models, which so far is cubic model,  and add seasonal dummy variables for Jan to December
 
 ```{r}
 co2.df <- data.frame(value=co2.ts$value, time.index=time.index, season=factor(time.index%%12, ordered = F))
@@ -244,7 +240,7 @@ plot(mod.ln.5)
 
 ```
 
-This model has better R-square than any of the previous models. Lets use this model to forcast for year 2020
+This model has better R-square than any of the previous models. Lets use this model to forecast for year 2020
 
 ```{r}
 time.index.2020 = seq(from=(2020-1959)*12+1,length.out=12)
@@ -346,7 +342,7 @@ describe(co2.noaa.weekly.df)
 co2.noaa.weekly.df <- co2.noaa.weekly.df %>%
   mutate(record.date=ymd(paste(year,month,day)))
 ```
-
+We can see in the dataset there are 2388 observations. The make the time series easier to work with, we create an index using all of the time columns and convert the data to a tsibble object. 
 
 ```{r}
 week.frequency = 365.25/7
@@ -354,9 +350,11 @@ co2.noaa.weekly.ts.raw <- ts(data=co2.noaa.weekly.df$record.value,start = 1974.3
 co2.noaa.weekly.ts <- as_tsibble(ts(data=co2.noaa.weekly.df$record.value,start = 1974.3795	, frequency = week.frequency), class="matrix")
 cbind(head(co2.noaa.weekly.ts),tail(co2.noaa.weekly.ts))
 summary(co2.noaa.weekly.ts)
+class(co2.noaa.weekly.ts)
 ```
+In the summary of the tsibble object, we can see that there are 20 missing values. 
 
-Missing data analysis. Fill in with interpolation from neighbours. We can try and fit a model and use that model instead for interpolation.
+To fill in the missing data, we fill in the values with interpolation from neighbour data points. We can try and fit a model and use that model instead for interpolation. After the interpolation we can see that there are 0 rows with missing values. 
 ```{r}
 co2.noaa.weekly.ts%>%
   filter(is.na(value))
@@ -374,10 +372,26 @@ co2.noaa.weekly.ts %>%
   autoplot(.vars = value) +
   geom_smooth() +
   labs(title = "Keeling Curve till 2020", y="Co2 emission (units)", x="Year")
+
+co2.ts %>%
+  gg_season(y=value, period = "year")+
+  ylab("CO2 emission")+
+    ggtitle("Seasonal plot : Monthly CO2 emission")
+
   
 ```
 
 We can see that from about 1995 onwards the trend has picked up and increasing faster than pre 1995 trend.
+
+```{r}
+#Additional EDA
+co2.noaa.weekly.ts %>%
+  gg_season(y=value, period = "year")+
+  ylab("CO2 emission")+
+    ggtitle("Seasonal plot : Monthly CO2 emission")
+
+```
+The seasonal plot looks similar to the monthly CO2 data evaluated earlier, but we can now see the effects of the weekly data points by the variation in each line versus the smoother line in the monthly data. The seasonal monthly trends, however, are clearly the same. 
 
 Now lets compare the current CO2 levels to predicted from Q2 and 3
 
@@ -391,7 +405,7 @@ co2.noaa.weekly.ts %>%
   labs(title="Year 2020 Actual vs Prediction from Linear Model and ARIMA model")
 
 ```
-The predicted CO2 levels are lesser compared to actual levels.
+The predicted CO2 levels are lesser compared to actual levels. The red line is the predicted values from the cubic model with seasonal variables and the navy line is the predicted values from the ARIMA model. 
 
 Now lets compare monthly average curve with model forecasts
 ```{r}
@@ -430,10 +444,8 @@ co2.noaa.monthly.ts %>%
   autolayer(co2.noaa.arima.pred.ts, .vars=value, color="navy") +
   autolayer(model.arima.best.q3.fitted.ts, .vars=value, color="navy") +
   labs(title="Part 2 and 3 model predictions vs NOAA monthly average")
-
-
-
 ```
+We see that up until about the year 2000, both models model the actual data closely. After, the models separate from the actuals with the cubic model showing the lowest values (red), and the ARIMA model (navy)also showing lower values than the actual values (blue). 
 
 **Part 5 (3 points)**
 
@@ -446,7 +458,7 @@ co2.noaa.weekly.ts %>%
   stl(s.window = week.frequency) %>%
   autoplot()
 ```
-Now lets substract sesonal data from time series to get sesonally adjusted time series
+Now lets substract seasonal data from time series to get seasonally adjusted time series
 ```{r}
 co2.noaa.weekly.ts.components <- stl(co2.noaa.weekly.ts ,s.window = week.frequency)$time.series
 co2.noaa.weekly.ts.components.seasonal <- co2.noaa.weekly.ts.components[,'seasonal']
@@ -459,69 +471,125 @@ Lets check the SA time series
 co2.noaa.weekly.ts.SA %>%
   autoplot()
 
+co2.noaa.weekly.ts.SA %>%  gg_tsdisplay(plot_type = "partial")
 ```
+We can see a smoother line with the seasonally adjusted series. 
 
-
+Now we split the seasonally adjusted and non-seasonally adjusted time series into training and test sets. With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
 ```{r}
-#Seasonally adjust weekly dataset
-co2.noaa.weekly.ts.SA <- stl(co2.noaa.weekly.ts, s.window='periodic') %>% seasadj()
-co2.noaa.weekly.ts.SA  %>%  autoplot() + ggtitle("Seasonally Adjusted Weekly NOAA data")
-
-#Split NSA data into training and test
+#Split SA data into training and test
 co2.noaa.weekly.ts.SA.test <- tail(co2.noaa.weekly.ts, 104)
 co2.noaa.weekly.ts.SA.training <- head(co2.noaa.weekly.ts, 2284)
-
-co2.noaa.weekly.ts.SA.training %>% ggAcf()
-co2.noaa.weekly.ts.SA.training %>% ggPacf()
-co2.noaa.weekly.ts.SA.training %>% gg_tsdisplay()
 
 #Split NSA data into training and test
 co2.noaa.weekly.ts.test <- tail(co2.noaa.weekly.ts, 104)
 co2.noaa.weekly.ts.training <- head(co2.noaa.weekly.ts, 2284)
+```
 
-co2.noaa.weekly.ts %>% ggAcf()
-co2.noaa.weekly.ts %>% ggPacf()
-co2.noaa.weekly.ts %>% gg_tsdisplay()
+```{r}
+#Fit ARIMA model for NA data
+no.p=2
+no.P=0
+no.q=2
+no.Q=0
+no.d=1
+no.D=0
 
+no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
 
-get.best.arima <- function(x.ts, maxord = c(1,1,1,1,1,1))
-{
-  best.aic <-1000000
-  n <- length(x.ts)
-  for (p in 0:maxord[1]) for(d in 0:maxord[2]) for(q in 0:maxord[3])
-      for (P in 0:maxord[4]) for(D in 0:maxord[5]) for(Q in 0:maxord[6])
-      {
-        fit <- Arima(x.ts, order = c(p,d,q),
-                     seas = list(order = c(P,D,Q),
-                                 frequency(x.ts)), method = "CSS")
-        fit.aic <- -2*fit$loglik + 2*(length(fit$coef))
-        if (fit.aic < best.aic)
-        {
-          best.aic <- fit.aic
-          best.fit <- fit
-          best.model <- c(p,d,q,P,D,Q)
-        }
-      }
-    list(best.aic, best.fit, best.model)
+print(paste("Number of models to fit =",no.of.models))
+
+params.df <- expand.grid(p=0:no.p, d=0:no.d, q=0:no.q, P=0:no.P, D=0:no.D, Q=0:no.Q)
+i <- 1
+
+funFitModel <- function(param.row){
+  progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
+  i <- i+1
+  p = param.row['p']
+  q = param.row['q']
+  d = param.row['d']
+  P = param.row['P']
+  Q = param.row['Q']
+  D = param.row['D']
+  
+  #print(paste(p,q,d,P,Q,D))
+  tryCatch({
+  model.fit = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(p,d,q), seasonal=c(P,D,Q), lambda=lambda, include.drift = FALSE);
+  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+
+  return (model.info);
+  }, error=function(e){
+    return (data.frame())
+  })
+  
 }
 
-best.arima.training1 <- get.best.arima(as.ts(co2.noaa.weekly.ts.training), maxord = c(1,1,1,1,1,1))
-best.arima.training1
+model.fit.info.df.SA <- do.call("rbind",(apply(params.df, 1,funFitModel )))
+colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+print("Top 6 models by BIC")
+model.fit.info.df.SA %>%
+  arrange(model.fit.bic) %>%
+  head()
 
-best.arima.training2 <- get.best.arima(as.ts(co2.noaa.weekly.ts.SA.training), maxord = c(1,1,1,1,1,1))
+model.arima.best.SA = Arima(y=as.ts(co2.noaa.weekly.ts.SA.training), order=c(2,2,1), seasonal=c(0,0,0), include.drift = FALSE);
 
-best.arima.training1
-best.arima.training2
 
 ```
 
-```{r gd}
-co2.noaa.weekly.ts %>%
-  as_tibble() %>%
-  as.ts()
-ts_seas(co2.noaa.weekly.ts)
+
+```{r}
+#Fit ARIMA model for NSA data
+no.p=no.P=2
+no.q=no.Q=2
+no.d=no.D=1
+no.of.models<-(no.p+1)*(no.d+1)*(no.q+1)*(no.P+1)*(no.D+1)*(no.Q+1)
+
+print(paste("Number of models to fit =",no.of.models))
+
+params.df <- expand.grid(p=0:no.p, d=0:no.d, q=0:no.q, P=0:no.P, D=0:no.D, Q=0:no.Q)
+i <- 1
+
+funFitModel <- function(param.row){
+  progress(value=i, max.value = no.of.models, console = TRUE, progress.bar = TRUE)
+  i <- i+1
+  p = param.row['p']
+  q = param.row['q']
+  d = param.row['d']
+  P = param.row['P']
+  Q = param.row['Q']
+  D = param.row['D']
+  
+  #print(paste(p,q,d,P,Q,D))
+  tryCatch({
+  model.fit = Arima(y=as.ts(co2.noaa.weekly.ts.training), order=c(p,d,q), seasonal=c(P,D,Q));
+  model.info = data.frame(p,q,d,P,Q,D, model.fit$aic, model.fit$aicc, model.fit$bic);
+
+  return (model.info);
+  }, error=function(e){
+    return (data.frame())
+  })
+  
+}
+
+model.fit.info.df <- do.call("rbind",(apply(params.df, 1,funFitModel )))
+colnames(model.fit.info.df) <- c("p","q", "d", "P", "Q", "D", "aic", "aicc", "bic")
+print("Top 6 models by BIC")
+model.fit.info.df %>%
+  arrange(bic) %>%
+  head()
 ```
-With 2388 obversations, we can take the last 2 years of the dataset by extracting the last 104 observations, since every observation is 1 week. The remaining 2284 observations are the training set. 
+
+```{r}
+#Fit quadratic model
+
+
+
+#Fit cubic model
+co2.noaa.weekly.ts.SA.cubicmodel <- lm(formula = co2.noaa.weekly.ts.SA$value ~ time.index + I(time.index^2) + I(time.index^3), data=co2.noaa.weekly.ts.SA)
+
+co2.noaa.weekly.ts.SA
+```
+
 
 **Part 6 (3 points)**
 

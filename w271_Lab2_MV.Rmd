@@ -99,6 +99,7 @@ boxplot(co2~cycle(co2), xlab = "Month", ylab = "co2", main = "Monthly co2 levels
 acf(co2, lag = 100)
 pacf(co2, lag.max = 100)
 
+library(fpp2)
 ggseasonplot(co2, year.labels=TRUE, year.labels.left=TRUE) +
   ylab("co2") +
   ggtitle("Seasonal plot: co2 levels")
@@ -129,6 +130,8 @@ $$y = \beta_0 + \beta_1time$$
 
 ```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
 #Convert to tsibble and create time index
+library(tsibble)
+library(dplyr)
 co2 <- as_tsibble(co2) %>% mutate(time_index = row_number())
 
 #Create linear model
@@ -154,6 +157,7 @@ ggplot(data = co2.df, aes(x=time, y=value, colour=variable)) +
         axis.text.y = element_text(angle = 45, hjust = 1)
         )	
 
+library(car)
 #Create model diagnostic function
 model_diagnostic = function(model) {
   plot(model)
@@ -211,6 +215,7 @@ The fitted quadratic model is as follows, where again, the time variable, includ
 $$y = 314.8 + + 0.067time + 0.00009time^2$$
 ```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
 #Create column for seasonal 
+library(lubridate)
 co2 <- as_tsibble(co2) %>% mutate(month = as.factor(month(index)))
 
 quad.trend.fit2 = lm(value ~ time_index + I(time_index^2) + month, data=co2)
@@ -266,7 +271,7 @@ get.best.arima <- function(x.ts, maxord = c(1,1,1,1,1,1))
         fit <- Arima(x.ts, order = c(p,d,q),
                      seas = list(order = c(P,D,Q),
                                  frequency(x.ts)), method = "CSS")
-        fit.aic <- -2*fit$loglik + 2*(p + q + 1)
+        fit.aic <- -2*fit$loglik + 2*(length(fit$coef))
         if (fit.aic < best.aic)
         {
           best.aic <- fit.aic
@@ -289,7 +294,7 @@ co2 %>%
   autoplot() +
     ylab("co2") + xlab("Year") + ggtitle("co2 Forecasts for ARIMA(1,1,1)(2,0,2)[12]")
 
-
+head(co2)
 
 
 ```
@@ -302,6 +307,11 @@ The file `co2_weekly_mlo.txt` contains weekly observations of atmospheric carbon
 **Part 5 (3 points)**
 
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+
+```{r}
+co2.noaa.weekly.ts
+
+```
 
 **Part 6 (3 points)**
 
