@@ -64,7 +64,9 @@ head(co2)
 tail(co2)
 str(co2)
 summary(co2)
-hist(co2)
+ggplot(co2, aes(x=co2))+
+  geom_histogram(color="darkblue", fill="lightblue") +
+  labs(title="Histogram co2 ppm")
 ```
 The co2 dataset is comprised of 468 observations of data from 1959 to 1998 where each datapoint is one month's data. The co2 levels in the dataset range from between 313.2 to 366.8. The histogram shows us that the most common co2 levels are between 320 and 325, and generally the frequency of co2 values decreases as co2 goes up. There is a small spike of frequencies between co2 level 355 and 360. There are no missing values in the dataset. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
 
@@ -109,8 +111,6 @@ co2.ts %>%
   gg_season(y=value, period = "year")+
   ylab("CO2 emission")+
     ggtitle("Seasonal plot : Monthly CO2 emission")
-
-ggseasonplot(as.ts(co2.ts), year.labels=FALSE, continuous=TRUE, polar = TRUE) #Looks good may be?
 ```
 We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern hemisphere vs southern hemisphere. Population, vegitation and other attributes of these two halves of earth are quite different which could potentially cause this seasonal effect.
 
@@ -218,7 +218,6 @@ plot(mod.ln.3)
 
 ```
 This model is even better fit, but Q-Q plot shows deviation at start and end. So lets try taking log of value and see if that scale fit any better.
-
 
 ```{r}
 mod.ln.4 <- lm(formula = log(value) ~ time.index + I(time.index^2)+ I(time.index^3), data=co2.ts)
