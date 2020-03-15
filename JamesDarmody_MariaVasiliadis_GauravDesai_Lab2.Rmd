@@ -699,8 +699,30 @@ For our pplynomial model, we will use a cubic polynomial with dummy variables fo
 ```{r}
 #Fit cubic model with month dummy variable
 
+co2.noaa.weekly.ts.SA.training.df <- data.frame(value=co2.noaa.weekly.ts.SA.training$value, time.index=1:length(co2.noaa.weekly.ts.SA.training$index), season=factor(month(co2.noaa.weekly.ts.SA.training$index), ordered = F))
+mod.ln.noaa.sa <- lm(formula = value ~ 0 + time.index + I(time.index^2)  + I(time.index^3) + season, data=co2.noaa.weekly.ts.SA.training.df)
+summary(mod.ln.noaa.sa)
+plot(mod.ln.noaa.sa)
 ```
 
+Linear model all the features as significant. Lets check the accuracy of this model
+
+```{r}
+in.sample.accuracy.df = data.frame(RMSE=rbind(accuracy(model.arima.best.SA)[,'RMSE'], accuracy(mod.ln.noaa.sa)[,'RMSE']), row.names = c("Arima-SA", "Linear-SA"))
+in.sample.accuracy.df
+```
+Accuracy of polinomial model is much better than Arima model. Lets see how this model performs to pseudo out-sample data
+
+```{r}
+co2.noaa.weekly.ts.SA.test.df <- data.frame(value=co2.noaa.weekly.ts.SA.test$value, time.index=length(co2.noaa.weekly.ts.SA.training$index)+1:length(co2.noaa.weekly.ts.SA.test$index), season=factor(month(co2.noaa.weekly.ts.SA.test$index), ordered = F),time.origin=co2.noaa.weekly.ts.SA.test$index)
+
+co2.noaa.weekly.ts.SA.test.df$predicted = predict(mod.ln.noaa.sa, newdata = co2.noaa.weekly.ts.SA.test.df)
+ggplot(co2.noaa.weekly.ts.SA.test.df, aes(x=time.origin))+
+  geom_line(aes(y=value), color="red")+ #original
+  geom_line(aes(y=predicted), color="blue")+ #prediected by polynomial model
+  geom_line(aes(y=forecast(model.arima.best.SA, h=length(co2.noaa.weekly.ts.SA.test$index)+1 )$mean[-1]), color="cyan") # predicted by SA Arima model
+```
+The polynomial model follows the seasonally adjusted out sample data better than Arima model fitted on same training dataset.
 
 **Part 6 (3 points)**
 
