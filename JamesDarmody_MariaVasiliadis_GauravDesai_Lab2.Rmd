@@ -36,11 +36,12 @@ library(seasonal)
 library(tsbox)
 library(tibble)
 library(svMisc)
+library(stargazer)
 ```
 
 # The Keeling Curve
 
-In the 1950s, the geochemist Charles David Keeling observed a seasonal pattern in the amount of carbon dioxide present in air samples collected over the course of several years. He was able to attribute this pattern to the difference in the amount of land area and vegetation cover between the northern and southern hemipsheres, and the resulting variation in global rates of photosynthesis as the hemispheres' seasons alternated throughout the year. 
+In the 1950s, the geochemist Charles David Keeling observed a seasonal pattern in the amount of carbon dioxide present in air samples collected over the course of several years. He was able to attribute this pattern to the difference in the amount of land area and vegetation cover between the northern and southern hemispheres, and the resulting variation in global rates of photosynthesis as the hemispheres' seasons alternated throughout the year. 
 
 In 1958 Keeling began continuous monitoring of atmospheric carbon dioxide concentrations from the Mauna Loa Observatory in Hawaii and soon observed a trend increase carbon dioxide levels in addition to the seasonal cycle. He was able to attribute this trend increase to growth in global rates of fossil fuel combustion. This trend has continued to the present.
 
@@ -58,21 +59,24 @@ title(main = "Monthly Mean CO2 Variation")
 Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This should include thorough analyses of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed.
 
 **Answer**
-Lets look at the data
+Lets first look at the data
 ```{r}
 head(co2)
 tail(co2)
 str(co2)
 summary(co2)
 ggplot(co2, aes(x = co2)) +
-  geom_histogram(color = "darkblue", fill = "lightblue") +
+  geom_histogram(color = "darkblue", fill = "lightblue", binwidth = 1) +
   labs(title = "Histogram co2 ppm")
 ```
-The co2 dataset is comprised of 468 observations of data from 1959 to 1998 where each datapoint is one month's data. The co2 levels in the dataset range from between 313.2 to 366.8. The histogram shows us that the most common co2 levels are between 320 and 325, and generally the frequency of co2 values decreases as co2 goes up. There is a small spike of frequencies between co2 level 355 and 360. There are no missing values in the dataset. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
+The co2 dataset is comprised of 468 observations of data from 1959 to 1998 where each datapoint corresponds to an observation at a month. The co2 levels in the dataset range from 313.2 to 366.8. The histogram shows us that the most common co2 levels are between 320 and 325, and generally the frequency of co2 values decreases as co2 goes up. There is a small spike of frequencies between co2 level 355 and 360. There are no missing values in the dataset. Histogram of value is left skewed but that may not be correct representation of the co2 emission levels over time. So lets look at it using time dimension.
 
 ```{r}
 co2.ts <- as_tsibble(co2)
-autoplot(co2.ts, .vars = value)
+co2.ts %>%
+  autoplot(.vars = value) +
+  labs(title="Co2 levels over the years") +
+  xlab("Years") + ylab("CO2 ppm")
 ```
 We observe two things
 1. There is upward trend year on year in CO2 emissions
@@ -85,15 +89,15 @@ co2.ts %>% model(STL(value)) %>% components() %>% autoplot()
 ```
 When we decompose using STL model, we can see the upward trend separated from yearly seasonal cycles.
 
-We note that seasonal cycle ups and downs are growing with time, so we may need to stabilize the seasons for better predictions.
+We note that seasonal cycle ups and downs are growing with time, so we may need to stabilize the seasons for better predictions using box-cox transformation.
 
 
 ```{r}
-co2.ts %>% gg_tsdisplay(plot_type = "partial", y = value) +
+co2.ts %>% gg_tsdisplay(lag_max = 120,plot_type = "partial", y = value) +
   ggtitle("Trend with ACF & PACF")
 ```
 
-The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multples of 12 months. This indicates that the model could be AR model with 12 months seasonal cycles.
+The ACF tells us that there is autocorrelation even after 24 months. On the other hand PACF drops after 2 but again pops up at multiples of 12 months. This indicates that the model could be AR model with 12 months seasonal cycles.
 
 Now lets look at each component one by one starting with trend:
 
@@ -101,32 +105,34 @@ Now lets look at each component one by one starting with trend:
 co2.ts.components <- co2.ts %>% model(STL(value)) %>% components()
 ggplot(data = co2.ts.components) +
   geom_line(aes(x = index, y = trend)) +
-  ggtitle("Trend of co2 Time Series - ppm")
+  ggtitle("Trend curve for co2 Time Series - ppm")
 ```
-There are minor bumps and dips but there is no major shock or sudden movement in trend.
+There are minor bumps and dips but there is no major shock or sudden movement in trend that we need to take care while building a model.
 
 Now lets look at seasonal cycles.
 
 ```{r}
 co2.ts %>%
   gg_season(y = value, period = "year") +
-  ylab("CO2 emission") +
-  ggtitle("Seasonal plot : Monthly CO2 emission")
+  ylab("CO2 ppm") + xlab("Month") +
+  ggtitle("Seasonal plot : Monthly CO2 levels ppm")
 ```
-We can clearly see that CO2 emission is higher in April-May and goes down in September-October every year. This could be due to summer in Northern hemisphere vs southern hemisphere. Population, vegitation and other attributes of these two halves of earth are quite different which could potentially cause this seasonal effect.
+We can clearly see that CO2 emission is higher around April-May and goes down around September-October every year. This could be due to summer in Northern hemisphere vs southern hemisphere. Population, vegetation and other attributes of these two halves of earth are quite different from each other and could potentially cause this seasonal effect.
 
-Now lets look at same data from another angle.
+Now lets look at same seasonal data from another perspective
 ```{r}
 co2.ts %>%
   gg_subseries(y = value, period = "year") +
   geom_hline(aes(yintercept = mean(co2.ts$value)), colour = "red") +
-  ylab("CO2 emission") +
-  xlab("Years") +
-  ggtitle("Seasonal subseries plot : Monthly CO2 emission")
+  ylab("CO2 levels ppm") +
+  xlab("Year") +
+  ggtitle("Seasonal sub series plot : Monthly CO2 levels ppm")
 ```
-It is more or less same observation that northern summer increases CO2 emission and southern summer decreases CO2 eission within a year. But we can cearly see that CO2 emission is on the rise year on year for each and every month.
+Following the difference between blue and red lines tells us more or less same story that northern summer increases CO2 levels and southern summer decreases CO2 levels within a year. But we can clearly see that CO2 emission is on the rise year on year for each and every month.
 
-Since we saw earlier that seasonal patterns are are increasin in variance, we can try to transform it so the seasonal changes are uniform across time series. This is desirable property for finding a good model fit.
+Since we saw earlier that seasonal patterns are increasing in variance, we can try to transform it so the seasonal changes are uniform across time series. This is desirable property for finding a good model fit.
+
+Lets try Box-Cox transformation
 
 ```{r}
 lambda <- co2.ts %>%
@@ -139,56 +145,55 @@ co2.ts.trans.comp <- co2.ts %>% model(STL(box_cox(value, lambda)))
 
 co2.ts.trans.comp %>% components() %>% autoplot() +
   ggtitle(paste(
-    "Box-Cox Tranformed Decompositions for lambda=",
+    "Box-Cox Transformed Decomposition for lambda=",
     round(lambda, 3)
   ))
 ```
 After transformation we can see the seasonal pattern variance remains constant throughout.
 
 
-Now lets look at residuals:
+Now lets look at residuals before and after transformation:
 
 ```{r}
 #Before box-cox transformation
 plot.co2.ts.components <-
-  co2.ts.components  %>% select("remainder") %>%
-  ggplot(aes(x = remainder)) + geom_histogram() +
+  co2.ts.components  %>% select("remainder", index = 'index') %>%
+  ggplot(aes(x = remainder)) + geom_histogram(bins = 50) + xlab("Year") +
   ggtitle("Residuals Prior to Box-Cox")
 
 #After box-cox transformation
 plot.co2.ts.trans.comp <-
-  co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
-  ggplot(aes(x = remainder)) + geom_histogram() +
+  co2.ts.trans.comp  %>% components() %>% select("remainder", index = 'index') %>%
+  ggplot(aes(x = remainder)) + geom_histogram(bins = 50) + xlab("Year") +
   ggtitle("Residuals Subsequent to Box-Cox")
 
 grid.arrange(plot.co2.ts.components, plot.co2.ts.trans.comp, nrow = 2)
 ```
 Both before and after box-cox transformation residuals look fairly normally distributed.
 
+Now lets see the residuals over time
 ```{r}
-
 plot.resid.co2.ts.components <-
-  co2.ts.components %>% select("remainder") %>%
-  autoplot() + ggtitle("Residuals Prior to Box-Cox Transformation")
+  co2.ts.components %>% select("remainder", index = 'index') %>%
+  autoplot(.vars = remainder) + ggtitle("Residuals Prior to Box-Cox Transformation") + xlab("Year")
 
 plot.resid.co2.ts.trans.comp <-
-  co2.ts.trans.comp  %>% components() %>% select("remainder") %>%
-  autoplot() + ggtitle("Residuals Subsequent to Box-Cox Transformation")
+  co2.ts.trans.comp  %>% components() %>% select("remainder", index = 'index') %>%
+  autoplot(.vars = remainder) + ggtitle("Residuals Subsequent to Box-Cox Transformation") + xlab("Year")
 
 grid.arrange(plot.resid.co2.ts.components,
              plot.resid.co2.ts.trans.comp,
              nrow = 2)
 ```
 
-Residuals appear to be stationary and appear to be white noise with no trend or seasonal patterns. 
+Residuals appear to be stationary and appear to be white noise with no trend or seasonal patterns. Residual variance has decreased post transformation.
 
 ```{r}
-co2.ts.components %>% select("remainder") %>%
-  gg_tsdisplay(plot_type = "partial") + ggtitle("Residuals with ACF Prior to Box-Cox")
+co2.ts.components %>% select("remainder", index = 'index') %>%
+  gg_tsdisplay(plot_type = "partial", y = remainder) + ggtitle("Residuals with ACF Prior to Box-Cox") + xlab("Year")
 
-co2.ts.trans.comp %>% components() %>% select("remainder") %>%
-  gg_tsdisplay(plot_type = "partial") + ggtitle("Residuals with ACF Post Box-Cox")
-
+co2.ts.trans.comp %>% components() %>% select("remainder", index = 'index') %>%
+  gg_tsdisplay(plot_type = "partial", y = remainder) + ggtitle("Residuals with ACF Post Box-Cox") + xlab("Year") 
 ```
 
 **Part 2 (3 points)**
@@ -200,8 +205,8 @@ Lets first fit a linear time trend model:
 ```{r}
 time.index <- 1:length(co2.ts$index)
 mod.ln.1 <- lm(formula = value ~ time.index, data = co2.ts)
-par(mfrow = c(2, 2))
 summary(mod.ln.1)
+par(mfrow = c(2, 2))
 plot(mod.ln.1)
 ```
 
@@ -241,7 +246,7 @@ plot(mod.ln.4)
 
 Taking log doesn't improve much.
 
-So finally lets choose the best of the models, which so far is cubic model, and add seasonal dummy variables for Jan to December:
+So finally lets choose the best of the models, which so far is cubic model, and add seasonal dummy variables for January to December:
 
 ```{r}
 co2.df <-
@@ -278,7 +283,8 @@ co2.2020.pred.ts <-
   ))
 
 co2.2020.pred.ts %>%
-  autoplot(.vars = value)
+  autoplot(.vars = value) +
+  labs(title="Predicted CO2 levels for year 2020") + xlab("Time") + ylab("Co2 level ppm")
 ```
 Unsurprisingly, the 2020 prediction follows the same seasonal trend as the other years, with a max co2 level of ~386.5 and a minimum value of ~380.5. 
 **Part 3 (3 points)**
@@ -373,9 +379,10 @@ co2.2020.arima.pred.ts <- forecast(model.arima.best.q3, h = 276) %>%
 
 co2.2020.arima.pred.ts %>%
   autoplot(.vars = value) +
-  labs(title = "2020 CO2 predictions from best fitted ARIMA (0,1,1) (2,0,1) model")
+  labs(title = "2020 CO2 predictions from best fitted ARIMA (0,1,1) (2,0,1) model")+
+  xlab("Year") + ylab("CO2 levels ppm")
 ```
-Our 2020 prediction using the ARIMA model follows the seasonal pattern previously recognized, and has a maximum CO2 level of 404.5 and a minimum level of 397.5
+Our 2020 prediction using the ARIMA model follows the seasonal pattern previously recognized, and has a maximum CO2 level of 404.5 ppm and a minimum level of 397.5 ppm
 
 Below, we inscribe the model using Latex and Backshift notation.
 
@@ -442,11 +449,10 @@ co2.noaa.weekly.ts <-
   )
 cbind(head(co2.noaa.weekly.ts), tail(co2.noaa.weekly.ts))
 summary(co2.noaa.weekly.ts)
-class(co2.noaa.weekly.ts)
 ```
-In the summary of the tsibble object, we can see that there are 20 missing values. In the available data, the lowest CO2 value is 326.7 and the greatest is 415.4. 
+In the summary of the tsibble object, we can see that there are 20 missing values. In the available data, the lowest CO2 value is 326.7 ppm and the greatest is 415.4 ppm.
 
-To fill in the missing data, we fill in the values with interpolation from neighbour data points. After the interpolation we can see that there are 0 rows with missing values. 
+To fill in the missing data, we fill in the values with interpolation from neighbor data points. After the interpolation we can see that there are 0 rows with missing values. 
 ```{r}
 co2.noaa.weekly.ts %>%
   filter(is.na(value))
@@ -465,7 +471,7 @@ co2.noaa.weekly.ts %>%
   labs(title = "Keeling Curve till 2020", y = "Co2 emission (units)", x =
          "Year")
 ```
-In the Keeling curve, we saw a constant increasing trend from the start of the series to about 1990. After a few years of a slower rate of increase, we can see that from about 1995 onwards the trend has picked up and increasing faster than pre 1995 trend. In the curve we see the clear seasonal pattern in CO2 levels as every year the CO2 levels experience a spike and low point.
+In the Keeling curve, we saw a constant increasing trend from the start of the series to about 1990. After a few years of a slower rate of increase, we can see that from about 1995 onward the trend has picked up and increasing faster than pre 1995 trend. In the curve we see the clear seasonal pattern in CO2 levels as every year the CO2 levels experience a spike and low point.
 
 ```{r}
 #Additional EDA
@@ -480,7 +486,7 @@ The seasonal plot looks similar to the monthly CO2 data evaluated earlier, but w
 co2.noaa.weekly.ts %>% gg_tsdisplay(plot_type = "partial", y = value) +
   ggtitle("Trend with ACF & PACF")
 ```
-The ACF tells us that there is autcorrelation even after 24 months. On the other hand PACF is not indicative of any partial autocorrelation. This could have something to do with the fact that the series is a weekly series. 
+The ACF tells us that there is autocorrelation even after 24 months. On the other hand PACF is not indicative of any partial auto correlation. This could have something to do with the fact that the series is a weekly series. 
 
 Now lets compare the current CO2 levels to the predicted levels from Q2 and Q3. In the chart below, the blue line represents CO2 actuals, red represents forecasts from the cubic model with monthly dummy variables, and navy represents the forecast from the ARIMA model:
 
@@ -488,9 +494,9 @@ Now lets compare the current CO2 levels to the predicted levels from Q2 and Q3. 
 co2.noaa.weekly.ts %>%
   filter_index("2019-12-31" ~ .) %>%
   mutate(index = as.Date(index)) %>%
-  autoplot(.vars = value, color = "blue") +
-  autolayer(co2.2020.pred.ts, .vars = value, color = "red") +
-  autolayer(co2.2020.arima.pred.ts, .vars = value, color = "navy") +
+  autoplot(.vars = value, color = "blue") + #Weekly actual time series
+  autolayer(co2.2020.pred.ts, .vars = value, color = "red") + # Prediction from polynomial model
+  autolayer(co2.2020.arima.pred.ts, .vars = value, color = "navy") + # Prediction from Arima model
   labs(title = "Year 2020 Actual vs Prediction from Linear Model and ARIMA model") 
 ```
 For the first few actual observations in 2020, we see that the actual CO2 levels (blue) are higher than the values predicted from both models. The actuals are around 10-15 units higher than the ARIMA model forecast (navy). The ARIMA model and the cubic plus dummy model follow the same general pattern, but the ARIMA model has forecasted values around 15-20 units greater than the cubic model (red). 
@@ -532,22 +538,22 @@ model.arima.best.q3.fitted.ts <- model.arima.best.q3$fitted %>%
   as_tsibble()
 
 co2.noaa.monthly.ts %>%
-  autoplot(.vars = avg_value, color = "blue") +
-  autolayer(co2.noaa.like.pred.ts, .vars = value, color = "red") +
-  autolayer(co2.noaa.arima.pred.ts, .vars = value, color = "navy") +
+  autoplot(.vars = avg_value, color = "blue") + # Actual NOAA series averaged to monthly
+  autolayer(co2.noaa.like.pred.ts, .vars = value, color = "red") + # Polynomial model prediction
+  autolayer(co2.noaa.arima.pred.ts, .vars = value, color = "navy") + # Arima model prediction
   autolayer(model.arima.best.q3.fitted.ts,
             .vars = value,
-            color = "navy") +
-  labs(title = "Part 2 and 3 model predictions vs NOAA monthly average")
+            color = "navy") + xlab("Year") + ylab("Monthly Average CO2 level in ppm") +
+  labs(title = "Part 2 and 3 model predictions vs NOAA monthly average CO2 ppm")
 ```
 We see that up until about the year 2000, both models follow the actual data closely. After, the models separate from the actuals with the cubic model showing the lowest values (red), and the ARIMA model (navy) also showing lower values than the actual values (blue). The actual CO2 levels are rising faster than either model forecasted. The cubic model forecasts that the CO2 level would stop rising and would flatten. Clearly the ARIMA model is closer to modeling the actual CO2 values and the cubic model is not a good fit. 
 
 **Part 5 (3 points)**
 
-Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (pseudo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
 
-First lets try couple of ways in which we can decompose seasonality by analysing residuals:
+First lets try couple of ways in which we can decompose seasonality by analyzing residuals:
 
 ```{r}
 plotRemainderFromSTL <- function(s.degree = 0) {
@@ -561,7 +567,9 @@ plotRemainderFromSTL <- function(s.degree = 0) {
     ))
   
   par(mfrow = c(1, 2))
-  ts.obj %>% gg_tsdisplay(y = value, plot_type = "partial") #TODO add s.degree in title
+  ts.obj %>% gg_tsdisplay(y = value, plot_type = "partial") +
+    labs(title = paste("Plot with s.degree=",s.degree))
+  
 }
 
 plotRemainderFromSTL(s.degree = 0)
@@ -573,11 +581,12 @@ Lets see how seasonal decomposition looks:
 ```{r}
 co2.noaa.weekly.ts %>%
   stl(s.window = week.frequency, s.degree = 1) %>%
-  autoplot()
+  autoplot() +
+  labs(title = "NOAA weekly CO2 levels decomposition")
 ```
 In the decomposed series we see the clear increasing trend line and the seasonal pattern with somewhat consistent variance. 
 
-Now lets substract seasonal data from time series to get seasonally adjusted time series:
+Now lets subtract seasonal data from time series to get seasonally adjusted time series:
 
 ```{r}
 co2.noaa.weekly.ts.components <-
@@ -593,10 +602,10 @@ co2.noaa.weekly.ts.SA <-
     )
   )
 cbind(
-  head(co2.noaa.weekly.ts),
-  tail(co2.noaa.weekly.ts),
-  head(co2.noaa.weekly.ts.SA),
-  tail(co2.noaa.weekly.ts.SA)
+  NSA=head(co2.noaa.weekly.ts),
+  NSA=tail(co2.noaa.weekly.ts),
+  SA=head(co2.noaa.weekly.ts.SA),
+  SA=tail(co2.noaa.weekly.ts.SA)
 )
 ```
 
@@ -604,9 +613,11 @@ cbind(
 Lets check the SA time series
 ```{r}
 co2.noaa.weekly.ts.SA %>%
-  autoplot()
+  autoplot(.vars = value )+
+  labs(title = "NOAA weekly seasonally adjusted series trend")
 
-co2.noaa.weekly.ts.SA %>%  gg_tsdisplay(plot_type = "partial")
+co2.noaa.weekly.ts.SA %>%  gg_tsdisplay(plot_type = "partial", y = value)+
+  labs(title = "NOAA weekly seasonally adjusted series ACF and PACF")
 ```
 We can see a smoother trend line with the seasonally adjusted series. The acf chart shows a very slow decreasing lag for every 30+ lags. The pacf chart suggests a non-stationary random walk process. 
 
@@ -706,16 +717,14 @@ model.fit.info.df.SA <-
 colnames(model.fit.info.df.SA) <-
   c("p", "d", "q", "P", "D", "Q", "aic", "aicc", "bic")
 ```
-```{
-r
-}
+```{r}
 print("Top 6 models by BIC")
 model.fit.info.df.SA %>%
-arrange(bic) %>%
-head()
+  arrange(bic) %>%
+  head()
 ```
 
-Arima(0,2,3) is in top 3 models by all 3 measres AIC, AICc and BIC. We pick this model as best model as this has least number of parameters compared to other top models.
+Arima(0,2,3) is in top 3 models by all 3 measures AIC, AICc and BIC. We pick this model as best model as this has least number of parameters compared to other top models.
 
 ```{r}
 model.arima.best.SA = Arima(
@@ -793,16 +802,14 @@ model.fit.info.df.NSA <-
 colnames(model.fit.info.df.NSA) <-
   c("p", "d", "q", "P", "D", "Q", "aic", "aicc", "bic")
 ```
-```{
-r
-}
+```{r}
 print("Top 6 models by BIC")
 model.fit.info.df.NSA %>%
-arrange(bic) %>%
-head()
+  arrange(bic) %>%
+  head()
 ```
 
-Best model for NSA time sries is Arima(1,1,1)(0,1,1). We selected this model because has lowest AIC, AICc and BIC so this is natural selection.
+Best model for NSA time series is Arima(1,1,1)(0,1,1). We selected this model because has lowest AIC, AICc and BIC so this is natural selection.
 Ideally, we could try with higher values of p,d and q if but it is going to take much longer to estimate the models as number of parameters quickly increase exponentially.
 
 ```{r}
@@ -834,19 +841,19 @@ Lets look at actual vs fitted values in chart.
 
 ```{r}
 co2.noaa.weekly.ts.SA.training %>%
-  autoplot(.vars = value, color = "red") +
+  autoplot(.vars = value, color = "red") + #original data
   autolayer(as_tsibble(model.arima.best.SA$fitted),
             .vars = value,
-            color = "blue") +
+            color = "blue") + # in sample prediction
   labs(title = "SA In-Sample - Actual vs Fitted ")
 ```
 
 ```{r}
 co2.noaa.weekly.ts.training %>%
-  autoplot(.vars = value, color = "red") +
+  autoplot(.vars = value, color = "red") + #original data
   autolayer(as_tsibble(model.arima.best.NSA$fitted),
             .vars = value,
-            color = "blue") +
+            color = "blue") + #in sample data
   labs(title = "NSA In-Sample - Actual vs Fitted ")
 ```
 In the SA and NSA charts, we can see that that our modeled values seems to fit very closely to the actual values. 
@@ -857,10 +864,10 @@ Now lets look at out-of-sample accuracy for SA model:
 forecast(model.arima.best.SA, h = length(co2.noaa.weekly.ts.SA.test$index) +
            1)$mean %>%
   as_tsibble() %>%
-  autoplot(.vars = value, color = "blue") +
+  autoplot(.vars = value, color = "blue") + # out sample prediction
   autolayer(co2.noaa.weekly.ts.SA.test,
             .vars = value,
-            color = "red") +
+            color = "red") + # out sample original data
   labs(title = "SA : Actual vs Out-Sample Predicted")
 ```
 Seasonally adjusted model predicts the point estimates as a linear model and predicts the pseudo out-sample as a trend line. This is expected as model is based on seasonally adjusted training dataset.
@@ -871,13 +878,13 @@ Now lets look at out-of-sample accuracy for NSA model:
 forecast(model.arima.best.NSA, h = length(co2.noaa.weekly.ts.test$index) +
            1)$mean %>%
   as_tsibble() %>%
-  autoplot(.vars = value, color = "blue") +
-  autolayer(co2.noaa.weekly.ts.test, .vars = value, color = "red") +
+  autoplot(.vars = value, color = "blue") + # out sample predicted
+  autolayer(co2.noaa.weekly.ts.test, .vars = value, color = "red") + # out sample original data
   labs(title = "NSA : Actual vs Out-Sample Predicted")
 ```
 Non SA model follows the pseudo out-sample dataset much more closely than SA model. The predictions are smooth over weekly fluctuations but still follows the original time series curve quite closely.
 
-For our pplynomial model, we will use a cubic polynomial with dummy variables for each month since this is the polynomial model variation we previously had the most success with. 
+For our polynomial model, we will use a cubic polynomial with dummy variables for each month since this is the polynomial model variation we previously had the most success with. 
 ```{r}
 #Fit cubic model with month dummy variable
 co2.noaa.weekly.ts.SA.training.df <-
@@ -892,6 +899,7 @@ mod.ln.noaa.sa <-
     data = co2.noaa.weekly.ts.SA.training.df
   )
 summary(mod.ln.noaa.sa)
+par(mfrow = c(2, 2))
 plot(mod.ln.noaa.sa)
 ```
 
@@ -1101,7 +1109,7 @@ When using a 95% confidence interval, the first time for 420 ppm is in week 8 of
 The lower estimates of the confidence intervals are as follows:
 When using a 95% confidence interval, the first time for 420 ppm is in week 11 of 2026 420 ppm and in week 30 of 2030 the last time estimate is reached. With a 95% confidence interval the value 500 ppm is not reached for the low estimate. Finally, using an 80% confidence interval, in week 12 of 2024 420 ppm is reached, and in week 50 of 2101 500 ppm is reached.
 
-Also note that if we keep forcasting any further, the 95% CI forecast turns downwards and may touch 420 ppm again, so above table would change if we take even wider forecast window.
+Also note that if we keep forecasting any further, the 95% CI forecast turns downwards and may touch 420 ppm again, so above table would change if we take even wider forecast window.
 
 Now lets generate prediction for year 2100:
 ```{r}
@@ -1119,7 +1127,7 @@ model.arima.best.NSA.predict.ft %>%
   labs(title = "Predicted CO2 levels for year 2100")
 ```
 
-Point estimate for CO2 levels in year 2100 is around 600 ppm. 80% CI CO2 levels are from 500 ppm to 700 ppm whereas 95 % CI CO2 levels are 450 ppm to 750 ppm.
+Point estimate for CO2 levels in year 2100 is around 600 ppm. 80% CI CO2 levels predictions are from 500 ppm to 700 ppm whereas 95 % CI CO2 levels predictions are even wider from 450 ppm to 750 ppm.
 
 
 
